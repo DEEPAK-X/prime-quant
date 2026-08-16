@@ -26,6 +26,8 @@ export interface RpcSessionOptions {
 	spawn?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 	/** Sniff assistant messages for quant JSON cards. */
 	cardSniffer?: CardSniffer;
+	/** Observe every raw RPC record (drives artifact scanning around tool runs). */
+	rawRecordObserver?: (record: RpcRecord) => void;
 	log?: (message: string) => void;
 	/** Timeout for the readiness probe, ms. */
 	startTimeoutMs?: number;
@@ -49,6 +51,7 @@ export class RpcSession {
 	private readonly sessionDir: string | undefined;
 	private readonly commandTimeoutMs: number | undefined;
 	private readonly spawn: RpcSessionOptions["spawn"];
+	private readonly rawRecordObserver: ((record: RpcRecord) => void) | undefined;
 	private readonly log: (message: string) => void;
 	private readonly startTimeoutMs: number;
 	private readonly restart: { initialMs: number; maxMs: number; maxAttempts: number };
@@ -59,6 +62,7 @@ export class RpcSession {
 		this.sessionDir = options.sessionDir;
 		this.commandTimeoutMs = options.commandTimeoutMs;
 		this.spawn = options.spawn;
+		this.rawRecordObserver = options.rawRecordObserver;
 		this.log = options.log ?? (() => {});
 		this.startTimeoutMs = options.startTimeoutMs ?? 60_000;
 		this.restart = {
@@ -191,6 +195,7 @@ export class RpcSession {
 	}
 
 	private handleRecord(record: RpcRecord): void {
+		this.rawRecordObserver?.(record);
 		const events = this.translator.translate(record);
 		for (const event of events) {
 			if (event.type === "agent_state") {

@@ -20,6 +20,18 @@ export {
 } from "./rpc-client.js";
 export { RpcSession, type RpcSessionOptions } from "./rpc-session.js";
 export {
+	type ArtifactEntry,
+	type ArtifactScanner,
+	type ArtifactScannerOptions,
+	createArtifactScanner,
+	createTearsheetWatcher,
+	safeReportName,
+	sniffCard,
+	type TearsheetEntry,
+	type TearsheetWatcher,
+	type TearsheetWatcherOptions,
+} from "./tearsheets.js";
+export {
 	type CardSniffer,
 	type CardSniffResult,
 	deriveStage,
