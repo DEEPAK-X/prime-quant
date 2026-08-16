@@ -26,7 +26,10 @@ import { isAbsolute, resolve as pathResolve, relative } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 
 export const DEFAULT_PORT = 3001;
-export const DEFAULT_HOST = "localhost";
+// Bind IPv4 explicitly: on some hosts `localhost` resolves to ::1 while
+// clients resolve it to 127.0.0.1, making connections flaky. The GUI proxies
+// to 127.0.0.1:3001, so bind the same address.
+export const DEFAULT_HOST = "127.0.0.1";
 
 const WS_OPEN = WebSocket.OPEN;
 

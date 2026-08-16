@@ -45,7 +45,7 @@ function createFakeSession(): BridgeSession & {
 
 function connectWs(port: number): Promise<WebSocket> {
 	return new Promise((resolve, reject) => {
-		const ws = new WebSocket(`ws://localhost:${port}/ws/events`);
+		const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/events`);
 		ws.on("open", () => resolve(ws));
 		ws.on("error", reject);
 	});
@@ -115,14 +115,14 @@ describe("Phase 8A: web GUI bridge HTTP + WebSocket", () => {
 	});
 
 	it("boots on the configured port, serves /api/health, and drives a chat turn", async () => {
-		bridge = createGuiBridge({ port, host: "localhost", session: session!, artifactsRoot: tempDir });
+		bridge = createGuiBridge({ port, host: "127.0.0.1", session: session!, artifactsRoot: tempDir });
 		await bridge.start();
 
-		const health = await fetch(`http://localhost:${port}/api/health`);
+		const health = await fetch(`http://127.0.0.1:${port}/api/health`);
 		expect(health.status).toBe(200);
 		expect(await health.json()).toEqual({ status: "ok" });
 
-		const res = await fetch(`http://localhost:${port}/api/chat`, {
+		const res = await fetch(`http://127.0.0.1:${port}/api/chat`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ message: "Run walk-forward test" }),
@@ -141,7 +141,7 @@ describe("Phase 8A: web GUI bridge HTTP + WebSocket", () => {
 	});
 
 	it("broadcasts structured events to WebSocket clients as the session emits them", async () => {
-		bridge = createGuiBridge({ port, host: "localhost", session: session!, artifactsRoot: tempDir });
+		bridge = createGuiBridge({ port, host: "127.0.0.1", session: session!, artifactsRoot: tempDir });
 		await bridge.start();
 
 		const ws = await connectWs(port);
@@ -173,18 +173,18 @@ describe("Phase 8A: web GUI bridge HTTP + WebSocket", () => {
 		const sub = join(tempDir, "reports");
 		mkdirSync(sub, { recursive: true });
 		writeFileSync(join(sub, "tearsheet.html"), "<html>ok</html>");
-		bridge = createGuiBridge({ port, host: "localhost", session: session!, artifactsRoot: tempDir });
+		bridge = createGuiBridge({ port, host: "127.0.0.1", session: session!, artifactsRoot: tempDir });
 		await bridge.start();
 
 		const ok = await fetch(
-			`http://localhost:${port}/api/artifacts/serve?path=${encodeURIComponent("reports/tearsheet.html")}`,
+			`http://127.0.0.1:${port}/api/artifacts/serve?path=${encodeURIComponent("reports/tearsheet.html")}`,
 		);
 		expect(ok.status).toBe(200);
 		expect(ok.headers.get("content-type")).toContain("text/html");
 		expect(await ok.text()).toBe("<html>ok</html>");
 
 		const escaped = await fetch(
-			`http://localhost:${port}/api/artifacts/serve?path=${encodeURIComponent("../../../etc/passwd")}`,
+			`http://127.0.0.1:${port}/api/artifacts/serve?path=${encodeURIComponent("../../../etc/passwd")}`,
 		);
 		expect(escaped.status).toBe(400);
 	});
