@@ -213,6 +213,11 @@ describeIfQuantKernel("IPython RLM bootstrap (quant skill bundle)", () => {
 			expect(card.spec).toEqual({ asset_class: "Forex", symbol: "EURUSD", timeframe: "M5" });
 			expect(typeof card.metrics.sharpe_ratio).toBe("number");
 			expect(card.metrics.trades_count).toBeGreaterThan(0);
+			// Real validation is active: the gate reports CPCV/walk-forward results.
+			expect(card.validation_gate.available).toBe(true);
+			expect(typeof card.validation_gate.passed).toBe("boolean");
+			expect(typeof card.validation_gate.deflated_sharpe).toBe("number");
+			expect(typeof card.validation_gate.pbo).toBe("number");
 			// Context compression: the card must respect the 150-token budget.
 			expect(lastLine.length / 4).toBeLessThanOrEqual(150);
 

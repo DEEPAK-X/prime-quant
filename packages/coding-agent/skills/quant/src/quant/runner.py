@@ -4,16 +4,24 @@ Runs a spec through ``primequant.backtest.engine`` and returns **only** a
 compact JSON summary card (metrics + validation gate) to the LLM context.
 Raw DataFrames, equity curves, and trade lists never cross the context
 boundary: they stay bound in the persistent kernel scope as
-``_last_backtest_df``, ``_last_equity_curve``, ``_last_trades``,
-``_last_result``, and ``_last_card`` for inspection by subagents.
+``_last_df``, ``_last_backtest_df``, ``_last_equity_curve``,
+``_last_trades``, ``_last_result``, ``_last_strategy``, and ``_last_card``
+for inspection by subagents.
 
-``primequant`` (and its ``polars``/``numpy`` dependencies) is imported lazily
-so the skill loads in any venv; when the engine is missing, callers receive an
-error card with an install hint instead of a traceback.
+``run_pipeline`` runs the full workflow: AST lookahead lint -> baseline
+backtest -> CPCV + walk-forward validation gate (DSR / PBO) -> conditional
+Optuna optimization (only when the gate passes and a ``param_space`` is
+given) -> minimalist HTML tearsheet written to disk (only
+``{report_path, file_size_kb}`` enters the card).
+
+``primequant`` (and its ``polars``/``numpy``/``optuna`` dependencies) is
+imported lazily so the skill loads in any venv; when the engine is missing,
+callers receive an error card with an install hint instead of a traceback.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import sys
@@ -25,11 +33,13 @@ from .refine import refine_log_failure
 MAX_CARD_TOKENS = 150
 
 # Kernel-scope binding names (never dump these into the model context).
-_LAST_DF = "_last_backtest_df"
+_LAST_DF = "_last_df"
+_LAST_BACKTEST_DF = "_last_backtest_df"
 _LAST_EQUITY = "_last_equity_curve"
 _LAST_TRADES = "_last_trades"
 _LAST_RESULT = "_last_result"
 _LAST_CARD = "_last_card"
+_LAST_STRATEGY = "_last_strategy"
 
 _POINT_SIZE = 0.00001  # 5-digit FX quote
 _PIP_PRICE = _POINT_SIZE * 10  # 1 pip = 10 points
@@ -57,13 +67,6 @@ _METRIC_KEY_MAP = (
     ("expectancy_usd", "expectancy"),
     ("trades_count", "n_trades"),
 )
-
-_GATE_KEY_ALIASES = {
-    "deflated_sharpe": ("deflated_sharpe", "dsr", "deflated_sharpe_ratio"),
-    "pbo": ("pbo", "probability_of_backtest_optimization", "pbo_probability"),
-    "oos_degradation_pct": ("oos_degradation_pct", "oos_degradation", "oos"),
-    "passed": ("passed", "pass", "gate_passed"),
-}
 
 
 class QuantUnavailableError(RuntimeError):
@@ -118,6 +121,24 @@ def _error_card(error: BaseException, hint: str = "") -> str:
     card: dict[str, Any] = {"status": "error", "error": {"type": type(error).__name__, "message": message}}
     if hint:
         card["error"]["hint"] = hint
+    return card_to_json(card)
+
+
+def _blocked_card(lint_summary: dict[str, Any], reason: str) -> str:
+    issues = lint_summary.get("issues") or []
+    first_message = ""
+    if issues and isinstance(issues[0], dict):
+        first_message = str(issues[0].get("message", ""))[:120]
+    card: dict[str, Any] = {
+        "status": "blocked",
+        "blocked_reason": reason,
+        "lint": {
+            "ok": lint_summary.get("ok"),
+            "error_count": lint_summary.get("error_count"),
+            "warning_count": lint_summary.get("warning_count"),
+            "first_issue": first_message,
+        },
+    }
     return card_to_json(card)
 
 
@@ -351,6 +372,69 @@ def _resolve_data(data: Any, namespace: dict[str, Any]) -> Any:
     )
 
 
+def _prepare(
+    spec: dict[str, Any] | str,
+    data: Any,
+    namespace: dict[str, Any],
+) -> tuple[dict[str, Any], Any, Any, Any, Any]:
+    """Resolve spec + data + strategy + config; prints surfaced assumptions."""
+    try:
+        from primequant.backtest.engine import run_backtest as engine_run
+    except Exception as exc:
+        raise QuantUnavailableError(
+            "primequant is not installed in this kernel environment; "
+            "install the prime-quant package (polars + numpy) and restart the kernel"
+        ) from exc
+
+    spec_dict = spec if isinstance(spec, dict) else idea_to_spec(spec)
+    spec_dict = normalize_spec(spec_dict)
+    for line in assumptions(spec_dict).splitlines():
+        print(line)
+
+    df = _resolve_data(data, namespace)
+    strategy = _SpecStrategy(
+        spec_dict["hypothesis"],
+        sizing=spec_dict["risk_model"]["lot_sizing"],
+        initial_capital=_INITIAL_CAPITAL,
+    )
+    config = _build_config(spec_dict)
+    return spec_dict, df, strategy, config, engine_run
+
+
+# ---------------------------------------------------------------------------
+# AST lookahead lint
+# ---------------------------------------------------------------------------
+
+
+def _lint_strategy() -> tuple[dict[str, Any], bool]:
+    """Lint the strategy builder source via ``primequant.validate.ast_linter``.
+
+    Returns (summary, has_errors). A failure to import or run the linter is
+    treated as an error so the pipeline fails closed rather than backtesting
+    an unvetted strategy.
+    """
+    try:
+        from primequant.validate.ast_linter import lint_strategy_cls
+
+        result = lint_strategy_cls(_SpecStrategy)
+        return result.to_summary(), result.has_errors
+    except Exception as exc:
+        summary = {
+            "ok": False,
+            "error_count": 1,
+            "warning_count": 0,
+            "issues": [
+                {
+                    "code": "lint_unavailable",
+                    "message": f"AST lint could not run: {type(exc).__name__}: {str(exc)[:100]}",
+                    "line": 0,
+                    "severity": "error",
+                }
+            ],
+        }
+        return summary, True
+
+
 # ---------------------------------------------------------------------------
 # Validation gate
 # ---------------------------------------------------------------------------
@@ -363,61 +447,131 @@ def _unavailable_gate(reason: str) -> dict[str, Any]:
         "deflated_sharpe": None,
         "pbo": None,
         "oos_degradation_pct": None,
-        "reason": reason,
+        "reason": reason[:120],
     }
 
 
-def _gate_value(raw: dict[str, Any], key: str) -> Any:
-    for alias in _GATE_KEY_ALIASES[key]:
-        if alias in raw:
-            return raw[alias]
-    return None
-
-
-def run_validation_gate(equity: list[float], trades: list[float]) -> dict[str, Any]:
-    """Run the anti-overfit gate (CPCV / walk-forward / DSR / PBO) when available.
-
-    ``primequant.validate`` is provided by the statistical validation engine;
-    until it is installed the gate reports itself as unavailable instead of
-    guessing.
-    """
+def _num(value: Any, digits: int = 3) -> float | None:
     try:
-        import primequant.validate as validate_module  # type: ignore[import-not-found]
-    except Exception as exc:  # noqa: BLE001 - degrade to an unavailable gate
-        return _unavailable_gate(f"primequant.validate is not installed ({type(exc).__name__})")
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
 
-    runner = getattr(validate_module, "run_validation", None) or getattr(validate_module, "validate", None)
-    if runner is None:
-        return _unavailable_gate("primequant.validate exposes no run_validation()/validate() callable")
 
-    try:
-        result = runner(equity, trades)
-    except Exception as exc:  # noqa: BLE001 - a broken gate must not kill the backtest
-        return _unavailable_gate(f"validation engine failed: {type(exc).__name__}: {exc}")
-
-    if isinstance(result, dict):
-        raw = result
-    else:
-        raw = {
-            name: getattr(result, name)
-            for name in (
-                "deflated_sharpe",
-                "dsr",
-                "pbo",
-                "oos_degradation_pct",
-                "oos_degradation",
-                "passed",
-                "pass",
-            )
-            if hasattr(result, name)
-        }
+def _evidence_gate(evidence: Any) -> dict[str, Any]:
+    dsr = getattr(evidence, "dsr", None) or {}
+    pbo = getattr(evidence, "pbo", None) or {}
+    degradation = getattr(evidence, "degradation", None) or {}
+    oos_pct = None
+    if isinstance(degradation, dict) and isinstance(degradation.get("degradation_pct"), (int, float)):
+        oos_pct = _num(float(degradation["degradation_pct"]) * 100.0, 1)
     return {
         "available": True,
-        "passed": _gate_value(raw, "passed"),
-        "deflated_sharpe": _gate_value(raw, "deflated_sharpe"),
-        "pbo": _gate_value(raw, "pbo"),
-        "oos_degradation_pct": _gate_value(raw, "oos_degradation_pct"),
+        "passed": bool(getattr(evidence, "passed", None)),
+        "deflated_sharpe": _num(dsr.get("dsr")) if isinstance(dsr, dict) else None,
+        "pbo": _num(pbo.get("pbo")) if isinstance(pbo, dict) else None,
+        "oos_degradation_pct": oos_pct,
     }
+
+
+def _run_validation(df: Any, strategy: Any) -> tuple[dict[str, Any], Any | None]:
+    """Run CPCV + walk-forward (DSR / PBO) via primequant.validate.pipeline.
+
+    Returns (gate_dict, evidence). The evidence object is only handed to
+    ``run_pipeline`` (tearsheet / optimization); the gate dict is the compact
+    context-boundary shape.
+    """
+    try:
+        import primequant.validate.pipeline as vp
+    except Exception as exc:
+        return _unavailable_gate(f"primequant.validate is not installed ({type(exc).__name__})"), None
+
+    try:
+        evidence = vp.run_validation_pipeline(df, strategy, config=vp.ValidationConfig())
+    except Exception as exc:  # noqa: BLE001 - a broken gate must not kill the backtest
+        return _unavailable_gate(f"validation engine failed: {type(exc).__name__}: {str(exc)[:100]}"), None
+    return _evidence_gate(evidence), evidence
+
+
+def run_validation_gate(df: Any, strategy: Any) -> dict[str, Any]:
+    """Run the anti-overfit gate and return the compact card shape."""
+    gate, _ = _run_validation(df, strategy)
+    return gate
+
+
+# ---------------------------------------------------------------------------
+# Optimization (conditional, gate-gated)
+# ---------------------------------------------------------------------------
+
+
+def _supported_params(spec_dict: dict[str, Any]) -> set[str]:
+    """Param names the spec's entry rules can absorb during optimization."""
+    supported: set[str] = set()
+    for rule in spec_dict["hypothesis"]["entry"]:
+        rule_type = rule.get("type")
+        if rule_type == "sma_cross":
+            supported.update(("fast", "slow"))
+        elif rule_type in ("breakout", "rsi_zone"):
+            supported.add("period")
+    return supported
+
+
+def _optimization_factory(spec_dict: dict[str, Any]) -> Any:
+    """Build a strategy factory mapping sampled params onto the spec's entry rules."""
+
+    def factory(params: dict[str, Any]) -> _SpecStrategy:
+        hypothesis = copy.deepcopy(spec_dict["hypothesis"])
+        supported: set[str] = set()
+        for rule in hypothesis["entry"]:
+            rule_type = rule.get("type")
+            if rule_type == "sma_cross":
+                supported.update(("fast", "slow"))
+                if "fast" in params:
+                    rule["fast"] = int(params["fast"])
+                if "slow" in params:
+                    rule["slow"] = int(params["slow"])
+            elif rule_type in ("breakout", "rsi_zone"):
+                supported.add("period")
+                if "period" in params:
+                    rule["period"] = int(params["period"])
+        unknown = set(params) - supported
+        if unknown:
+            raise QuantInputError(
+                f"unsupported optimization params {sorted(unknown)} for entry "
+                f"rules {[r.get('type') for r in hypothesis['entry']]}"
+            )
+        return _SpecStrategy(
+            hypothesis,
+            sizing=spec_dict["risk_model"]["lot_sizing"],
+            initial_capital=_INITIAL_CAPITAL,
+        )
+
+    return factory
+
+
+def _param_space_from_dict(space: dict[str, Any]) -> Any:
+    """Coerce an agent-friendly {name: [low, high] | choices} dict to a ParamSpace."""
+    from primequant.optimize.schema import CategoricalParam, FloatParam, IntParam, ParamSpace
+
+    params: list[Any] = []
+    for name, spec in space.items():
+        if not isinstance(name, str) or not name:
+            raise QuantInputError(f"param_space keys must be non-empty strings, got {name!r}")
+        if isinstance(spec, (list, tuple)) and len(spec) == 2:
+            lo, hi = spec
+            if isinstance(lo, int) and isinstance(hi, int):
+                params.append(IntParam(name, low=lo, high=hi))
+            elif isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+                params.append(FloatParam(name, low=float(lo), high=float(hi)))
+            else:
+                params.append(CategoricalParam(name, choices=[lo, hi]))
+        elif isinstance(spec, (list, tuple)):
+            params.append(CategoricalParam(name, choices=list(spec)))
+        else:
+            raise QuantInputError(
+                f"param_space entry {name!r} must be a [low, high] pair or a choice list"
+            )
+    return ParamSpace(params)
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +590,14 @@ def _metrics_card(metrics: dict[str, Any]) -> dict[str, Any]:
     return card
 
 
+def _spec_summary(spec_dict: dict[str, Any]) -> dict[str, str]:
+    return {
+        "asset_class": spec_dict["asset_class"],
+        "symbol": spec_dict["symbol"],
+        "timeframe": spec_dict["timeframe"],
+    }
+
+
 def _log_failure_best_effort(failure: dict[str, Any]) -> None:
     try:
         refine_log_failure(failure)
@@ -443,11 +605,26 @@ def _log_failure_best_effort(failure: dict[str, Any]) -> None:
         pass
 
 
+def _bind_backtest(namespace: dict[str, Any], df: Any, strategy: Any, result: Any) -> None:
+    _bind_last(
+        namespace,
+        **{
+            _LAST_DF: df,
+            _LAST_STRATEGY: strategy,
+            _LAST_BACKTEST_DF: df,
+            _LAST_EQUITY: list(result.equity),
+            _LAST_TRADES: list(result.trades),
+            _LAST_RESULT: result,
+        },
+    )
+
+
 async def run_backtest(
     spec: dict[str, Any] | str,
     data: Any = None,
     *,
     validate: bool = True,
+    lint: bool = True,
     namespace: dict[str, Any] | None = None,
 ) -> str:
     """Run an in-memory backtest and return a compact JSON summary card.
@@ -457,48 +634,27 @@ async def run_backtest(
     - ``data``: polars/pandas DataFrame, CSV/parquet path, or list of row
       dicts. Omitted: uses the kernel-scope ``df``.
     - ``validate``: include the anti-overfit validation gate in the card.
+    - ``lint``: run the AST lookahead lint gate on the strategy builder first.
     - ``namespace``: where to bind ``_last_*`` variables (defaults to the
       caller's kernel namespace).
 
     Returns only the card JSON; raw frames stay bound in the namespace as
-    ``_last_backtest_df`` / ``_last_equity_curve`` / ``_last_trades``.
+    ``_last_df`` / ``_last_backtest_df`` / ``_last_equity_curve`` /
+    ``_last_trades``.
     """
     ns = namespace if namespace is not None else _caller_namespace()
     try:
-        try:
-            from primequant.backtest.engine import run_backtest as engine_run
-        except Exception as exc:
-            raise QuantUnavailableError(
-                "primequant is not installed in this kernel environment; "
-                "install the prime-quant package (polars + numpy) and restart the kernel"
-            ) from exc
+        spec_dict, df, strategy, config, engine_run = _prepare(spec, data, ns)
+        if lint:
+            lint_summary, has_errors = _lint_strategy()
+            if has_errors:
+                return _blocked_card(lint_summary, "AST lint blocked strategy")
 
-        spec_dict = spec if isinstance(spec, dict) else idea_to_spec(spec)
-        spec_dict = normalize_spec(spec_dict)
-        for line in assumptions(spec_dict).splitlines():
-            print(line)
-
-        df = _resolve_data(data, ns)
-        strategy = _SpecStrategy(
-            spec_dict["hypothesis"],
-            sizing=spec_dict["risk_model"]["lot_sizing"],
-            initial_capital=_INITIAL_CAPITAL,
-        )
-        config = _build_config(spec_dict)
         result = engine_run(df, strategy, config=config)
+        _bind_backtest(ns, df, strategy, result)
 
-        _bind_last(
-            ns,
-            **{
-                _LAST_DF: strategy.signals(df).df,
-                _LAST_EQUITY: list(result.equity),
-                _LAST_TRADES: list(result.trades),
-                _LAST_RESULT: result,
-            },
-        )
-
-        gate = run_validation_gate(list(result.equity), list(result.trades)) if validate else None
-        if gate is not None and gate.get("passed") is False:
+        gate = run_validation_gate(df, strategy) if validate else None
+        if gate is not None and gate.get("available") and gate.get("passed") is False:
             _log_failure_best_effort(
                 {
                     "kind": "validation_gate",
@@ -509,13 +665,130 @@ async def run_backtest(
 
         card: dict[str, Any] = {
             "status": "success",
-            "spec": {
-                "asset_class": spec_dict["asset_class"],
-                "symbol": spec_dict["symbol"],
-                "timeframe": spec_dict["timeframe"],
-            },
+            "spec": _spec_summary(spec_dict),
             "metrics": _metrics_card(result.metrics),
             "validation_gate": gate,
+        }
+        _bind_last(ns, **{_LAST_CARD: card})
+        return card_to_json(card)
+    except Exception as exc:  # noqa: BLE001 - failures return an error card
+        _log_failure_best_effort(
+            {
+                "kind": "backtest_error",
+                "pattern": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        return _error_card(exc)
+
+
+async def run_pipeline(
+    spec: dict[str, Any] | str,
+    data: Any = None,
+    *,
+    namespace: dict[str, Any] | None = None,
+    param_space: dict[str, Any] | Any = None,
+    report_path: str | None = None,
+    optimize_trials: int = 25,
+    seed: int = 42,
+    lint: bool = True,
+) -> str:
+    """Run the full quant pipeline and return a compact JSON summary card.
+
+    Steps: AST lookahead lint -> baseline backtest (kernel-bound ``_last_*``)
+    -> CPCV + walk-forward validation gate -> conditional Optuna optimization
+    (only when the gate passes and ``param_space`` is provided) -> HTML
+    tearsheet written to disk (only ``{report_path, file_size_kb}`` returns).
+
+    ``param_space`` is a ``ParamSpace`` or an agent-friendly dict like
+    ``{"fast": [5, 20], "slow": [20, 60]}`` (int pairs -> integer params,
+    float pairs -> float params, otherwise categorical choices). The sampled
+    params are mapped onto the spec's entry rules (``fast``/``slow`` for
+    ``sma_cross``, ``period`` for ``breakout``/``rsi_zone``).
+
+    The returned card never carries raw frames or HTML; the tearsheet path
+    points at the on-disk report for auditability.
+    """
+    ns = namespace if namespace is not None else _caller_namespace()
+    try:
+        spec_dict, df, strategy, config, engine_run = _prepare(spec, data, ns)
+        if lint:
+            lint_summary, has_errors = _lint_strategy()
+            if has_errors:
+                return _blocked_card(lint_summary, "AST lint blocked strategy")
+
+        result = engine_run(df, strategy, config=config)
+        _bind_backtest(ns, df, strategy, result)
+
+        gate, evidence = _run_validation(df, strategy)
+        if gate.get("available") and gate.get("passed") is False:
+            _log_failure_best_effort(
+                {
+                    "kind": "validation_gate",
+                    "pattern": f"gate failed for {spec_dict['symbol']} {spec_dict['timeframe']}: "
+                    f"pbo={gate.get('pbo')} dsr={gate.get('deflated_sharpe')}",
+                }
+            )
+
+        # Conditional optimization: only after a passed gate AND an explicit
+        # param space. The engine itself hard-blocks without passed evidence.
+        optimization: dict[str, Any] = {"skipped": True}
+        if gate.get("available") and gate.get("passed") is True and param_space is not None:
+            from primequant.optimize.engine import OptimizationConfig, run_optimization
+
+            # Fail fast on params the spec's entry rules cannot absorb instead
+            # of burning trials that optuna would catch one by one.
+            names = list(param_space.names) if hasattr(param_space, "names") else list(param_space)
+            supported = _supported_params(spec_dict)
+            unknown = set(names) - supported
+            if unknown:
+                raise QuantInputError(
+                    f"unsupported optimization params {sorted(unknown)} for entry "
+                    f"rules {[r.get('type') for r in spec_dict['hypothesis']['entry']]}"
+                )
+
+            space = param_space if hasattr(param_space, "suggest") else _param_space_from_dict(param_space)
+            opt_result = run_optimization(
+                _optimization_factory(spec_dict),
+                df,
+                space,
+                OptimizationConfig(n_trials=int(optimize_trials), seed=int(seed), backtest=config),
+                baseline_evidence=evidence,
+            )
+            optimization = {
+                "n_trials_run": int(opt_result.n_trials_run),
+                "best_params": dict(opt_result.best.params),
+            }
+        elif gate.get("available") is False:
+            optimization["reason"] = "validation engine unavailable"
+
+        # Tearsheet: write HTML to disk; only the path + size enter context.
+        report: dict[str, Any] = {}
+        try:
+            from primequant.report.tearsheet import TearsheetMeta, generate_html_tearsheet
+
+            meta = TearsheetMeta(
+                symbol=spec_dict["symbol"],
+                timeframe=spec_dict["timeframe"],
+                total_trades=int(result.metrics.get("n_trades", 0)),
+            )
+            report = generate_html_tearsheet(
+                result,
+                validation_evidence=evidence,
+                output_path=report_path,
+                meta=meta,
+            )
+        except Exception as exc:  # noqa: BLE001 - a broken report must not kill the pipeline
+            report = {"error": str(exc)[:120]}
+
+        card: dict[str, Any] = {
+            "status": "success",
+            # The pass/fail verdict lives in validation_gate.passed; duplicating
+            # it here would eat into the 150-token card budget.
+            "spec": _spec_summary(spec_dict),
+            "metrics": _metrics_card(result.metrics),
+            "validation_gate": gate,
+            "optimization": optimization,
+            "report": report,
         }
         _bind_last(ns, **{_LAST_CARD: card})
         return card_to_json(card)
@@ -538,19 +811,19 @@ async def validate(
     """Return the validation-gate card for a backtest.
 
     With no inputs, validates the most recent kernel-scope run
-    (``_last_equity_curve`` / ``_last_trades``). Otherwise runs the backtest
+    (``_last_df`` / ``_last_strategy``). Otherwise runs the backtest
     first, exactly like ``run_backtest(..., validate=True)``.
     """
     ns = namespace if namespace is not None else _caller_namespace()
     try:
         if spec is None and data is None:
-            equity = ns.get(_LAST_EQUITY)
-            trades = ns.get(_LAST_TRADES)
-            if equity is None:
+            df = ns.get(_LAST_DF)
+            strategy = ns.get(_LAST_STRATEGY)
+            if df is None or strategy is None:
                 raise QuantInputError(
                     "no previous backtest in kernel scope; run run_backtest() first or pass spec/data"
                 )
-            gate = run_validation_gate(list(equity), list(trades))
+            gate, _ = _run_validation(df, strategy)
             prior_card = ns.get(_LAST_CARD) if isinstance(ns.get(_LAST_CARD), dict) else {}
             card: dict[str, Any] = {
                 "status": "success",
@@ -572,6 +845,7 @@ __all__ = [
     "card_to_json",
     "refine_log_failure",
     "run_backtest",
+    "run_pipeline",
     "run_validation_gate",
     "validate",
 ]

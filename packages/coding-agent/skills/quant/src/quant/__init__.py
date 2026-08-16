@@ -7,7 +7,9 @@ FX/CFD backtest & validation engine), exposed to the IPython kernel as
 - ``idea_to_spec`` — trader prompt -> validated StrategySpec, assumptions surfaced
 - ``run_backtest`` / ``validate`` — in-memory execution returning ONLY a compact
   JSON summary card (<= 150 tokens); raw frames stay bound to the kernel scope
-  as ``_last_backtest_df`` / ``_last_equity_curve`` / ``_last_trades``
+  as ``_last_df`` / ``_last_backtest_df`` / ``_last_equity_curve`` / ``_last_trades``
+- ``run_pipeline`` — full workflow: AST lint -> backtest -> CPCV + walk-forward
+  validation gate -> conditional Optuna optimization -> HTML tearsheet on disk
 - ``refine_log_failure`` — durable failure-pattern memory for the /refine loop
 
 All heavy imports (``primequant``, ``polars``, ``numpy``) are lazy so this
@@ -35,6 +37,7 @@ from .runner import (
     QuantUnavailableError,
     card_to_json,
     run_backtest,
+    run_pipeline,
     run_validation_gate,
     validate,
 )
@@ -53,6 +56,7 @@ __all__ = [
     "normalize_spec",
     "refine_log_failure",
     "run_backtest",
+    "run_pipeline",
     "run_validation_gate",
     "validate",
 ]

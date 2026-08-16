@@ -25,6 +25,7 @@ from quant.runner import (
     QuantInputError,
     card_to_json,
     run_backtest,
+    run_pipeline,
 )
 from rlm.harness import HarnessState
 
@@ -135,8 +136,11 @@ class TestRunner:
         ):
             assert key in metrics
         gate = card["validation_gate"]
-        assert gate["available"] is False  # validation engine not shipped yet
-        assert gate["passed"] is None
+        # Real validation engine: CPCV + walk-forward with DSR / PBO active.
+        assert gate["available"] is True
+        assert isinstance(gate["passed"], bool)
+        for key in ("deflated_sharpe", "pbo", "oos_degradation_pct"):
+            assert key in gate
         # Context budget: the card must stay under the 150-token cap.
         assert len(card_text) // 4 <= MAX_CARD_TOKENS
         assert len(card_text) // 4 > 0
@@ -178,16 +182,20 @@ class TestRunner:
         assert card["status"] == "error"
 
     def test_validation_gate_adapts_engine(self, monkeypatch) -> None:
-        class _FakeValidate:
-            def run_validation(self, equity, trades):  # noqa: ARG002
-                return {
-                    "deflated_sharpe": 1.32,
-                    "pbo": 0.11,
-                    "oos_degradation_pct": 22.4,
-                    "passed": True,
-                }
+        import primequant.validate.pipeline as vp
 
-        monkeypatch.setitem(sys.modules, "primequant.validate", _FakeValidate())
+        class _FakeEvidence:
+            passed = True
+            failure_reasons: list = []
+            dsr = {"dsr": 1.32}
+            pbo = {"pbo": 0.11}
+            degradation = {"degradation_pct": 0.224}
+            oos_sharpe_mean = 1.1
+            is_sharpe_mean = 1.4
+
+        monkeypatch.setattr(
+            vp, "run_validation_pipeline", lambda df, strategy, config=None: _FakeEvidence()
+        )
         df = _sample_df()
         card = json.loads(_run(run_backtest("EURUSD M5 sma cross", data=df, namespace={})))
         gate = card["validation_gate"]
@@ -196,6 +204,28 @@ class TestRunner:
         assert gate["deflated_sharpe"] == 1.32
         assert gate["pbo"] == 0.11
         assert gate["oos_degradation_pct"] == 22.4
+
+    def test_run_backtest_ast_lint_blocks_and_can_be_skipped(self, monkeypatch) -> None:
+        import primequant.validate.ast_linter as lint_mod
+        from primequant.validate.ast_linter import LintIssue, LintResult
+
+        monkeypatch.setattr(
+            lint_mod,
+            "lint_strategy_cls",
+            lambda cls: LintResult(
+                issues=[LintIssue(code="lookahead_shift", message="negative shift reads future bars", line=3)]
+            ),
+        )
+        ns: dict = {}
+        blocked = json.loads(_run(run_backtest("EURUSD M5 sma cross", data=_sample_df(), namespace=ns)))
+        assert blocked["status"] == "blocked"
+        assert "AST lint" in blocked["blocked_reason"]
+        assert "_last_equity_curve" not in ns
+        # lint=False bypasses the gate and runs normally.
+        ok = json.loads(
+            _run(run_backtest("EURUSD M5 sma cross", data=_sample_df(), namespace={}, lint=False))
+        )
+        assert ok["status"] == "success"
 
     def test_card_to_json_enforces_budget(self) -> None:
         huge = {"metrics": {f"key_{i}": i for i in range(2000)}}
@@ -213,7 +243,7 @@ class TestRunner:
         _run(run_backtest("EURUSD M5 sma cross", data=df, namespace=ns))
         card = json.loads(_run(quant.validate(namespace=ns)))
         assert card["status"] == "success"
-        assert card["validation_gate"]["available"] is False
+        assert card["validation_gate"]["available"] is True
 
     def test_validate_without_prior_run_error_card(self) -> None:
         card = json.loads(_run(quant.validate(namespace={})))
@@ -223,6 +253,155 @@ class TestRunner:
         ns: dict = {}
         card = json.loads(_run(quant.run("EURUSD M5 sma cross", data=_sample_df(), namespace=ns)))
         assert card["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# pipeline: run_pipeline (lint -> backtest -> gate -> optuna -> tearsheet)
+# ---------------------------------------------------------------------------
+
+
+def _passing_evidence():
+    class _FakeEvidence:
+        passed = True
+        failure_reasons: list = []
+        dsr = {"dsr": 1.32}
+        pbo = {"pbo": 0.11}
+        degradation = {"degradation_pct": 0.224}
+        fold_consistency = {"positive_fold_rate": 0.8, "cv": 0.4, "n": 15}
+        oos_sharpe_mean = 1.1
+        is_sharpe_mean = 1.4
+
+    return _FakeEvidence()
+
+
+def _failing_evidence():
+    class _FakeEvidence:
+        passed = False
+        failure_reasons = ["DSR 0.400 below threshold 0.950", "PBO 0.710 exceeds threshold 0.500"]
+        dsr = {"dsr": 0.4}
+        pbo = {"pbo": 0.71}
+        degradation = {"degradation_pct": 0.83}
+        fold_consistency = {"positive_fold_rate": 0.1, "cv": 2.0, "n": 15}
+        oos_sharpe_mean = -0.2
+        is_sharpe_mean = 1.2
+
+    return _FakeEvidence()
+
+
+class TestPipeline:
+    def test_run_pipeline_real_gate_and_report(self, tmp_path) -> None:
+        ns: dict = {}
+        card_text = _run(
+            run_pipeline(
+                "EURUSD M5 sma cross",
+                data=_sample_df(),
+                namespace=ns,
+                report_path=str(tmp_path / "t.html"),
+            )
+        )
+        card = json.loads(card_text)
+        assert card["status"] == "success"
+        gate = card["validation_gate"]
+        assert gate["available"] is True
+        assert isinstance(gate["passed"], bool)
+        # No param_space -> optimization skipped; report written to disk.
+        assert card["optimization"] == {"skipped": True}
+        assert card["report"]["report_path"].endswith("t.html")
+        assert card["report"]["file_size_kb"] > 0
+        assert (tmp_path / "t.html").exists()
+        # Context budget + memory contract (measured on the actual payload).
+        assert len(card_text) // 4 <= MAX_CARD_TOKENS
+        assert "_last_df" in ns and "_last_strategy" in ns
+        assert "_last_equity_curve" in ns and "_last_trades" in ns
+
+    def test_run_pipeline_skips_optimization_on_failed_gate(self, tmp_path, monkeypatch) -> None:
+        import primequant.validate.pipeline as vp
+
+        monkeypatch.setattr(
+            vp, "run_validation_pipeline", lambda df, strategy, config=None: _failing_evidence()
+        )
+        ns: dict = {}
+        card = json.loads(
+            _run(
+                run_pipeline(
+                    "EURUSD M5 sma cross",
+                    data=_sample_df(),
+                    namespace=ns,
+                    param_space={"fast": [5, 20], "slow": [20, 60]},
+                    report_path=str(tmp_path / "fail.html"),
+                )
+            )
+        )
+        assert card["status"] == "success"
+        assert card["validation_gate"]["passed"] is False
+        assert card["optimization"] == {"skipped": True}  # gate-gated, never runs
+        assert card["report"]["report_path"].endswith("fail.html")
+        assert (tmp_path / "fail.html").exists()
+
+    def test_run_pipeline_optimizes_when_gate_passes(self, tmp_path, monkeypatch) -> None:
+        import primequant.validate.pipeline as vp
+
+        monkeypatch.setattr(
+            vp, "run_validation_pipeline", lambda df, strategy, config=None: _passing_evidence()
+        )
+        ns: dict = {}
+        card_text = _run(
+            run_pipeline(
+                "EURUSD M5 sma cross",
+                data=_sample_df(),
+                namespace=ns,
+                param_space={"fast": [5, 20], "slow": [20, 60]},
+                optimize_trials=3,
+                report_path=str(tmp_path / "opt.html"),
+            )
+        )
+        card = json.loads(card_text)
+        assert card["status"] == "success"
+        assert card["validation_gate"]["passed"] is True
+        opt = card["optimization"]
+        assert "skipped" not in opt
+        assert opt["n_trials_run"] >= 1
+        assert set(opt["best_params"]).issubset({"fast", "slow"})
+        assert card["report"]["report_path"].endswith("opt.html")
+        assert (tmp_path / "opt.html").exists()
+        assert len(card_text) // 4 <= MAX_CARD_TOKENS
+
+    def test_run_pipeline_ast_lint_blocks(self, monkeypatch) -> None:
+        import primequant.validate.ast_linter as lint_mod
+        from primequant.validate.ast_linter import LintIssue, LintResult
+
+        monkeypatch.setattr(
+            lint_mod,
+            "lint_strategy_cls",
+            lambda cls: LintResult(
+                issues=[LintIssue(code="lookahead_shift", message="negative shift reads future bars", line=3)]
+            ),
+        )
+        ns: dict = {}
+        card = json.loads(_run(run_pipeline("EURUSD M5 sma cross", data=_sample_df(), namespace=ns)))
+        assert card["status"] == "blocked"
+        assert "AST lint" in card["blocked_reason"]
+        assert card["lint"]["error_count"] == 1
+        assert "_last_equity_curve" not in ns
+
+    def test_run_pipeline_unsupported_param_name_fails_fast(self, tmp_path, monkeypatch) -> None:
+        import primequant.validate.pipeline as vp
+
+        monkeypatch.setattr(
+            vp, "run_validation_pipeline", lambda df, strategy, config=None: _passing_evidence()
+        )
+        card = json.loads(
+            _run(
+                run_pipeline(
+                    "EURUSD M5 sma cross",
+                    data=_sample_df(),
+                    namespace={},
+                    param_space={"lots": [1, 5]},  # not a supported entry param
+                )
+            )
+        )
+        assert card["status"] == "error"
+        assert card["error"]["type"] == "QuantInputError"
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +464,7 @@ class TestQuantModule:
         for name in (
             "idea_to_spec",
             "run_backtest",
+            "run_pipeline",
             "validate",
             "refine_log_failure",
             "assumptions",
