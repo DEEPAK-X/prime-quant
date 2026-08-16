@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+	--font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--color-term-bg: #0d1117;
+	--color-term-panel: #161b22;
+	--color-term-border: #2d3748;
+	--color-term-fg: #c9d1d9;
+	--color-term-dim: #8b949e;
+	--color-term-accent: #58a6ff;
+	--color-term-green: #3fb950;
+	--color-term-red: #f85149;
+	--color-term-yellow: #d29922;
+	--color-term-purple: #d2a8ff;
+}
+
+html,
+body,
+#root {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--color-term-bg);
+	color: var(--color-term-fg);
+	font-family: var(--font-mono);
+	font-size: 13px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* Code highlight tokens (dependency-free highlighter in lib/highlight.ts). */
+.tok-comment {
+	color: var(--color-term-dim);
+	font-style: italic;
+}
+.tok-string {
+	color: #a5d6ff;
+}
+.tok-number {
+	color: var(--color-term-purple);
+}
+.tok-decorator {
+	color: var(--color-term-yellow);
+}
+.tok-keyword {
+	color: #ff7b72;
+}
+.tok-builtin {
+	color: #79c0ff;
+}
+.tok-call {
+	color: var(--color-term-fg);
+}
+
+/* Thin terminal scrollbars. */
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--color-term-border);
+}
+*::-webkit-scrollbar-thumb:hover {
+	background: #3d4a5c;
+}
