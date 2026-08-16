@@ -1,0 +1,22 @@
+{
+  "name": "@earendil-works/pi-web-ui-server",
+  "version": "0.7.2",
+  "private": true,
+  "type": "module",
+  "description": "Local HTTP + WebSocket bridge exposing a Prime Agent interactive session to a web GUI.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "vitest": "^4.1.10"
+  }
+}

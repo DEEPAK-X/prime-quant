@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added a sub-agent delegation integration test asserting `rlm.run(..., model="tier:worker")` routes the child to the configured worker-tier model, the child's quant summary card stays under the 150-token budget, and child kernel-scope variables never leak into the parent session.
 - Added task-based model tier routing (`modelTiers` in settings, `PRIME_QUANT_TIER_*` env vars, and `tier:<name>` selectors in `rlm.run`) so the interactive loop, verification subagents, and high-throughput worker sweeps can each use a configured provider model.
 - Added an AST lookahead-bias and leakage guard to the IPython kernel that rejects strategy/backtest cells using negative shifts, `t + n` future indexing, same-bar signal execution without lag, full-dataset normalization, or scaler fitting before train/test splits; skip a cell with `# prime-quant: skip-lint` or disable with `PRIME_QUANT_AST_LINT=0`.
 - Added the bundled `quant` skill bundle (`rlm.quant` in the kernel): `idea_to_spec` parses trader prompts into deterministic strategy specs and surfaces assumptions, `run_backtest`/`validate` run in-memory backtests that return only a compact JSON summary card (raw frames stay bound as `_last_df`/`_last_backtest_df`/`_last_equity_curve`/`_last_trades`), and `refine_log_failure` records failed runs into `rlm.harness` memory for the `/refine` loop.
