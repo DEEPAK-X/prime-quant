@@ -1,4 +1,10 @@
 from primequant.validate.cpcv import CPCVConfig, CPCVSplitter, Fold, split_summary
+from primequant.validate.ast_linter import (
+    LintIssue,
+    LintResult,
+    lint_source,
+    lint_strategy_cls,
+)
 from primequant.validate.overfit import (
     DSRResult,
     DegradationResult,
@@ -28,6 +34,10 @@ __all__ = [
     "CPCVSplitter",
     "Fold",
     "split_summary",
+    "LintIssue",
+    "LintResult",
+    "lint_source",
+    "lint_strategy_cls",
     "DSRResult",
     "DegradationResult",
     "PBOResult",
