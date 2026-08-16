@@ -65,6 +65,14 @@ except Exception as _prime_agent_rlm_error:
             return await self.run(prompt, **kwargs)
 
     rlm = _PrimeAgentMissingRlm()
+
+try:
+    from rlm import ast_linter as _prime_agent_ast_linter
+    if _prime_agent_os.environ.get("PRIME_QUANT_AST_LINT", "1").lower() not in ("0", "false", "no"):
+        _prime_agent_ast_linter.install(get_ipython())
+        rlm.lint = _prime_agent_ast_linter
+except Exception as _prime_agent_ast_linter_error:
+    _PRIME_AGENT_AST_LINTER_INSTALL_ERROR = str(_prime_agent_ast_linter_error)
 `.trim();
 
 export function buildRlmBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {

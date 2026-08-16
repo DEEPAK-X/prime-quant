@@ -262,6 +262,30 @@ Prime Agent stable builds fetch `https://pub-728493de92a943e2a9b2d17b4719f318.r2
 
 Use `--offline` or `PI_OFFLINE=1` to disable startup network operations, including update checks and package update checks.
 
+### Quant research: model tier routing
+
+Set a different `provider/model` per task tier in `.prime/agent/settings.json` (or the global file) to keep the interactive loop, verification subagents, and high-throughput `rlm` sweeps on separate models:
+
+```json
+{
+	"modelTiers": {
+		"orchestrator": "anthropic/claude-opus-4-7",
+		"reasoning": "openai/gpt-5.4",
+		"worker": "openrouter/moonshotai/kimi-k2.6"
+	}
+}
+```
+
+- `orchestrator` is the interactive chat loop model (used at session start when no `--model`/`--models` is given).
+- `worker` is the default model for `rlm.run(...)` subagents without an explicit `model=`.
+- `tier:<name>` selects a tier explicitly from Python: `await rlm.run("sweep params", model="tier:worker")` or `model="tier:reasoning"`.
+
+Per-environment overrides win over the settings file: `PRIME_QUANT_TIER_ORCHESTRATOR`, `PRIME_QUANT_TIER_REASONING`, `PRIME_QUANT_TIER_WORKER`. Unset tiers fall back to the parent session model.
+
+### Quant research: lookahead-bias guard
+
+The IPython kernel runs an AST linter before every cell and rejects (without executing) strategy/backtest code that contains lookahead bias or leakage: negative shifts (`.shift(-1)`), future indexing (`t + 1`), same-bar signal execution without lag (`signal * ret` without `.shift(1)`), full-dataset normalization (`(df - df.mean()) / df.std()`), and scaler fits on the full dataset before a `train_test_split`. Add `# prime-quant: skip-lint` to a cell to bypass it, call `rlm.lint.disable()` / `rlm.lint.enable()` from the kernel to toggle it, or set `PRIME_QUANT_AST_LINT=0` before starting to disable it entirely. `rlm.lint.check(source)` and `rlm.lint.lint_file(path)` are available for agent-facing checks.
+
 ## Context Files
 
 Prime Agent loads `AGENTS.md` (or `CLAUDE.md`) at startup from:

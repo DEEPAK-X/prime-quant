@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { type ModelTiersConfig, normalizeModelTiersConfig } from "./model-tiers.js";
 
 const RECENT_MODELS_LIMIT = 20;
 export const DEFAULT_IDLE_EVICTION_MINUTES = 90;
@@ -63,6 +64,9 @@ export interface ThinkingBudgetsSettings {
 export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
+
+/** Task-based model tier routing (orchestrator / reasoning / worker). */
+export type ModelTiersSettings = ModelTiersConfig;
 
 export interface BundledSkillsSettings {
 	websearch?: boolean; // default: true
@@ -163,6 +167,8 @@ export interface Settings {
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 	warnings?: WarningSettings;
+	/** Task-based model tier routing: `provider/model` (or model pattern) per tier. */
+	modelTiers?: ModelTiersSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 }
 
@@ -1273,5 +1279,9 @@ export class SettingsManager {
 		this.globalSettings.warnings = { ...warnings };
 		this.markModified("warnings");
 		this.save();
+	}
+
+	getModelTiers(): ModelTiersConfig {
+		return normalizeModelTiersConfig(this.settings.modelTiers);
 	}
 }

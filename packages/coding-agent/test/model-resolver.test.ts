@@ -456,6 +456,46 @@ describe("default model selection", () => {
 		expect(result.model?.id).toBe("openai/ghost-model");
 	});
 
+	test("findInitialModel uses the configured orchestrator tier model", async () => {
+		const orchestratorModel: Model<"anthropic-messages"> = {
+			...mockModels[0],
+			id: "gpt-5.4",
+			name: "GPT-5.4",
+			provider: "openai",
+			baseUrl: "https://api.openai.com",
+		};
+		const registry = {
+			getAll: () => [orchestratorModel, ...allModels],
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			tierOrchestrator: "openai/gpt-5.4",
+			modelRegistry: registry,
+		});
+
+		expect(result.model?.provider).toBe("openai");
+		expect(result.model?.id).toBe("gpt-5.4");
+	});
+
+	test("findInitialModel falls back when the orchestrator tier cannot be resolved", async () => {
+		const registry = {
+			getAll: () => allModels,
+			refreshAvailableModels: async () => allModels,
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			tierOrchestrator: "openai/does-not-exist",
+			modelRegistry: registry,
+		});
+
+		// Falls through to the first available model with a warning.
+		expect(result.model).toBeDefined();
+	});
+
 	test("findInitialModel uses medium as the built-in default thinking level", async () => {
 		const reasoningModel = mockModels[0];
 		const registry = {

@@ -520,6 +520,8 @@ export async function findInitialModel(options: {
 	defaultProvider?: string;
 	defaultModelId?: string;
 	defaultThinkingLevel?: ThinkingLevel;
+	/** Configured orchestrator tier model reference (provider/model or pattern). */
+	tierOrchestrator?: string;
 	modelRegistry: ModelRegistry;
 }): Promise<InitialModelResult> {
 	const {
@@ -530,6 +532,7 @@ export async function findInitialModel(options: {
 		defaultProvider,
 		defaultModelId,
 		defaultThinkingLevel,
+		tierOrchestrator,
 		modelRegistry,
 	} = options;
 
@@ -579,9 +582,28 @@ export async function findInitialModel(options: {
 			fallbackMessage: undefined,
 		};
 	}
+
+	// 3. Use the configured orchestrator tier model when set (skip if continuing/resuming)
+	if (tierOrchestrator && !isContinuing) {
+		const tierResult = resolveCliModel({ cliModel: tierOrchestrator, modelRegistry });
+		if (!tierResult.model) {
+			log.warn("could not resolve orchestrator tier model", {
+				tierOrchestrator,
+				error: tierResult.error,
+			});
+			console.warn(
+				chalk.yellow(
+					`Warning: orchestrator tier model "${tierOrchestrator}" could not be resolved. Using the saved default instead.`,
+				),
+			);
+		} else {
+			return { model: tierResult.model, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
+		}
+	}
+
 	const availableModels = await getAvailableModels();
 
-	// 3. Try saved default from settings
+	// 4. Try saved default from settings
 	if (defaultProvider && defaultModelId) {
 		// Rebuild from the provider template when the saved id is missing from this
 		// build's snapshot (e.g. prime-inference catalog churn), so it survives updates.
@@ -601,7 +623,7 @@ export async function findInitialModel(options: {
 		}
 	}
 
-	// 4. Try first available model with valid API key
+	// 5. Try first available model with valid API key
 	if (availableModels.length > 0) {
 		const defaultModel = findPreferredDefaultModel(availableModels);
 		if (defaultModel) {
@@ -612,7 +634,7 @@ export async function findInitialModel(options: {
 		return { model: availableModels[0], thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
 	}
 
-	// 5. No model found
+	// 6. No model found
 	return { model: undefined, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
 }
 

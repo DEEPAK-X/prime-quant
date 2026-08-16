@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added task-based model tier routing (`modelTiers` in settings, `PRIME_QUANT_TIER_*` env vars, and `tier:<name>` selectors in `rlm.run`) so the interactive loop, verification subagents, and high-throughput worker sweeps can each use a configured provider model.
+- Added an AST lookahead-bias and leakage guard to the IPython kernel that rejects strategy/backtest cells using negative shifts, `t + n` future indexing, same-bar signal execution without lag, full-dataset normalization, or scaler fitting before train/test splits; skip a cell with `# prime-quant: skip-lint` or disable with `PRIME_QUANT_AST_LINT=0`.
 - Fixed fullscreen wheel scrolling in Ghostty while retaining application link clicks; set `terminal.fullscreenMouse` to `false` to use native Cmd-click instead.
 - Changed the agents view to sort idle and inactive sessions by last message time, newest first, while keeping running agents in stable creation order.
 - Fixed `openai-codex` models being invisible to `rlm` subagents and `find_models` because model discovery reported Prime Agent's own version as the Codex client version ([#1375](https://github.com/PrimeIntellect-ai/prime-agent/pull/1375) by [@bilelrais](https://github.com/bilelrais)).

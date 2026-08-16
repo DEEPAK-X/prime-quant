@@ -189,6 +189,7 @@ import {
 	isSessionSlashCommandMessage,
 } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
+import { type ModelTier, parseTierSelector, resolveModelTierReference } from "./model-tiers.js";
 import { throwIfPromptAdmissionCancelled } from "./prompt-admission.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import {
@@ -9654,11 +9655,61 @@ export class AgentSession {
 		};
 	}
 
+	private _tierModelReference(tier: ModelTier): string | undefined {
+		return resolveModelTierReference(tier, this.settingsManager.getModelTiers());
+	}
+
+	private async _matchAuthenticatedRlmModel(reference: string): Promise<Model<Api> | undefined> {
+		const normalizedReference = reference.toLowerCase();
+		if (this.model && `${this.model.provider}/${this.model.id}`.toLowerCase() === normalizedReference) {
+			return this.model;
+		}
+		return (await this._authenticatedRlmModels()).find(
+			(candidate) => `${candidate.provider}/${candidate.id}`.toLowerCase() === normalizedReference,
+		);
+	}
+
 	private async _resolveRlmSubagentModel(reference: string | undefined): Promise<RlmSubagentModelSelection> {
 		const parentModel = this.model;
 		if (!parentModel) {
 			throw new Error(formatNoModelSelectedMessage());
 		}
+
+		// `tier:<name>` selectors route the subagent to the configured tier model;
+		// a tier with no configured model falls back to the parent model so partial
+		// tier configs degrade gracefully.
+		let tierReference: string | undefined;
+		let referenceLabel: string | undefined;
+		if (reference) {
+			const tier = parseTierSelector(reference);
+			if (tier) {
+				tierReference = this._tierModelReference(tier);
+				if (!tierReference) {
+					return { model: parentModel };
+				}
+				referenceLabel = `Configured ${tier} tier model`;
+			}
+		} else {
+			// Spawned subagents without an explicit model default to the worker tier
+			// (high-throughput parameter sweeps) when one is configured.
+			tierReference = this._tierModelReference("worker");
+			if (tierReference) {
+				referenceLabel = "Configured worker tier model";
+			}
+		}
+
+		if (tierReference) {
+			const tierModel = await this._matchAuthenticatedRlmModel(tierReference);
+			if (!tierModel) {
+				throw new Error(`${referenceLabel} '${tierReference}' is unavailable, unauthenticated, or expired`);
+			}
+			const tierAuth = await this._modelRegistry.getApiKeyAndHeaders(tierModel);
+			if (!tierAuth.ok) {
+				throw new Error(`${referenceLabel} '${tierReference}' failed authentication preflight`);
+			}
+			return { model: tierModel };
+		}
+
 		if (!reference) {
 			return { model: parentModel };
 		}
