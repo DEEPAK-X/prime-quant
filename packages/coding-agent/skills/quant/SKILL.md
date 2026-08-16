@@ -9,6 +9,7 @@ Four cooperating skills wrapped around `primequant` (the deterministic FX/CFD
 backtest & validation engine), exposed to the kernel as `rlm.quant`:
 
 - `idea_to_spec` — trader prompt -> validated `StrategySpec`
+- `fetch_data` — live MetaTrader 5 OHLCV pull (Windows + running terminal)
 - `run_backtest` / `validate` — in-memory execution with context compression
 - `run_pipeline` — AST lint -> backtest -> validation gate -> conditional
   Optuna optimization -> HTML tearsheet on disk
@@ -30,6 +31,11 @@ file_size_kb}`.
 Call directly from the kernel:
 
 ```python
+# 0. Pull live bars from the local MetaTrader 5 terminal into kernel `df`.
+#    Card carries only {symbol, timeframe, rows, range, qa, cache}; the frame
+#    lands in kernel scope as `df` and `_last_df`.
+card = await rlm.quant.fetch_data("EURUSD", "M5", bars=5000)
+
 # 1. Turn a trader prompt into a deterministic spec (surfaces assumptions).
 spec = await rlm.quant.idea_to_spec(
     "EURUSD M5 momentum, SMA 10/30 cross, ATR 2 stop, 3 ATR take profit, 1 lot"
@@ -66,6 +72,12 @@ spec before any code executes.
 
 ## Safety
 
+- `fetch_data` requires Windows, the `MetaTrader5` pip package, and a running
+  logged-in MT5 terminal; it reads market data only and never places orders.
+  Non-default terminals/logins go through the `PRIME_QUANT_MT5_PATH`,
+  `PRIME_QUANT_MT5_LOGIN`, `PRIME_QUANT_MT5_PASSWORD`, `PRIME_QUANT_MT5_SERVER`,
+  and `PRIME_QUANT_MT5_TIMEOUT` environment variables. A failed connection or
+  QA error surfaces in the card (`qa.ok=false`), never as a traceback.
 - Never dump `_last_df`, `_last_backtest_df`, `_last_equity_curve`, or
   `_last_trades` into the model context — keep them bound in the kernel and
   reference them by name. The tearsheet HTML lives on disk only.

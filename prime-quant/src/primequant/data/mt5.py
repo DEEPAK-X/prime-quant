@@ -308,6 +308,47 @@ class MT5Bridge:
                 f"No rates returned for {symbol} ({tf_label}) from {dt_from} to {dt_to}. MT5 error: {last_err}"
             )
 
+        return self._finalize_rates(rates, symbol, tf_label, cache=cache, cache_dir=cache_dir)
+
+    def get_recent_ohlcv(
+        self,
+        symbol: str,
+        timeframe: str | int,
+        bars: int = 5000,
+        *,
+        cache: bool = True,
+        cache_dir: str | Path = "data/cache",
+    ) -> pl.DataFrame:
+        """Query the most recent ``bars`` closed bars via MT5 copy_rates_from.
+
+        Count semantics survive weekends and holidays: the terminal returns
+        exactly the last ``bars`` bars it holds.
+        """
+        if bars <= 0:
+            raise ValueError(f"bars must be a positive integer, got {bars}")
+
+        self._select_symbol(symbol)
+        mt5 = self._get_mt5()
+        tf_int, tf_label = resolve_timeframe(timeframe, mt5)
+
+        rates = mt5.copy_rates_from(symbol, tf_int, datetime.now(timezone.utc), int(bars))
+        if rates is None or len(rates) == 0:
+            last_err = getattr(mt5, "last_error", lambda: "Unknown")()
+            raise ValueError(
+                f"No rates returned for {symbol} ({tf_label}) for the last {bars} bars. MT5 error: {last_err}"
+            )
+
+        return self._finalize_rates(rates, symbol, tf_label, cache=cache, cache_dir=cache_dir)
+
+    def _finalize_rates(
+        self,
+        rates: Any,
+        symbol: str,
+        tf_label: str,
+        *,
+        cache: bool,
+        cache_dir: str | Path,
+    ) -> pl.DataFrame:
         df = pl.DataFrame(rates)
 
         # Explicit Epoch Timestamp conversion: seconds since epoch -> Datetime('us')

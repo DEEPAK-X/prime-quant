@@ -152,6 +152,32 @@ class MockMT5:
 
         return np.array(data, dtype=dtype)
 
+    def copy_rates_from(
+        self, symbol: str, timeframe: int, from_dt: datetime, count: int
+    ) -> np.ndarray | None:
+        if symbol not in self.available_symbols:
+            return None
+
+        start_ts = 1704067200  # 2024-01-01 00:00:00 UTC
+        step = 300 if timeframe == self.TIMEFRAME_M5 else 60
+
+        dtype = [
+            ("time", "i8"),
+            ("open", "f8"),
+            ("high", "f8"),
+            ("low", "f8"),
+            ("close", "f8"),
+            ("tick_volume", "u8"),
+            ("spread", "i4"),
+            ("real_volume", "u8"),
+        ]
+        data = []
+        for i in range(count):
+            t = start_ts + i * step
+            o = 1.1000 + i * 0.0001
+            data.append((t, o, o + 0.0002, o - 0.0001, o + 0.0001, 100 + i, 12, 0))
+        return np.array(data, dtype=dtype)
+
     def copy_ticks_range(
         self, symbol: str, date_from: datetime, date_to: datetime, flags: int
     ) -> np.ndarray | None:
@@ -316,6 +342,28 @@ def test_get_historical_ohlcv_schema_epoch_and_cache(tmp_path: Path):
     assert expected_cache_file.exists()
     cached_df = pl.read_parquet(expected_cache_file)
     assert cached_df.equals(df)
+
+
+def test_get_recent_ohlcv_count_semantics_and_schema():
+    mock_mt5 = MockMT5(init_success=True)
+    bridge = MT5Bridge(mt5_module=mock_mt5)
+    bridge.initialize()
+
+    df = bridge.get_recent_ohlcv(symbol="EURUSD", timeframe="M5", bars=7, cache=False)
+
+    assert df.height == 7
+    assert df.columns == CANONICAL_MT5_COLUMNS
+    assert df.schema["time"] == pl.Datetime("us")
+    assert df["time"].is_sorted()
+    assert df["time"][0].year == 2024
+
+
+def test_get_recent_ohlcv_rejects_non_positive_bars():
+    bridge = MT5Bridge(mt5_module=MockMT5(init_success=True))
+    bridge.initialize()
+
+    with pytest.raises(ValueError, match="bars must be a positive integer"):
+        bridge.get_recent_ohlcv(symbol="EURUSD", timeframe="M5", bars=0, cache=False)
 
 
 def test_get_last_tick():

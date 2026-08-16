@@ -5,6 +5,7 @@ FX/CFD backtest & validation engine), exposed to the IPython kernel as
 ``rlm.quant``:
 
 - ``idea_to_spec`` — trader prompt -> validated StrategySpec, assumptions surfaced
+- ``fetch_data`` — live MT5 OHLCV pull bound to kernel ``df`` / ``_last_df``
 - ``run_backtest`` / ``validate`` — in-memory execution returning ONLY a compact
   JSON summary card (<= 150 tokens); raw frames stay bound to the kernel scope
   as ``_last_df`` / ``_last_backtest_df`` / ``_last_equity_curve`` / ``_last_trades``
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .data import DEFAULT_BARS, fetch_data
 from .idea_to_spec import (
     ASSET_CLASS_CFD,
     ASSET_CLASS_FOREX,
@@ -45,6 +47,7 @@ from .runner import (
 __all__ = [
     "ASSET_CLASS_CFD",
     "ASSET_CLASS_FOREX",
+    "DEFAULT_BARS",
     "MAX_CARD_TOKENS",
     "UNITS_PER_LOT",
     "CardTooLargeError",
@@ -52,6 +55,7 @@ __all__ = [
     "QuantUnavailableError",
     "assumptions",
     "card_to_json",
+    "fetch_data",
     "idea_to_spec",
     "normalize_spec",
     "refine_log_failure",

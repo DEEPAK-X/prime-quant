@@ -36,6 +36,7 @@ export const DEFAULT_RLM_EXTRA_UV_ARGS = DEFAULT_RLM_EXTRA_PACKAGES.map((pkg) =>
 export const DEFAULT_RLM_EXTRA_IMPORT_NAMES = DEFAULT_RLM_EXTRA_PACKAGES.map((pkg) => pkg.importName);
 export const DEFAULT_RLM_EXTRA_IMPORT_LABELS = DEFAULT_RLM_EXTRA_PACKAGES.map((pkg) => pkg.promptLabel);
 const UV_INSTALL_COMMAND = "curl -LsSf https://astral.sh/uv/install.sh | sh";
+const UV_INSTALL_COMMAND_WIN32 = "irm https://astral.sh/uv/install.ps1 | iex";
 const REQUIRED_HARNESS_METHODS = [
 	"create_memory",
 	"update_memory",
@@ -81,6 +82,7 @@ interface BootstrapVersion {
 	snapshot?: string;
 	extraUvArgs?: string[];
 	pythonSkills?: BootstrapPythonSkill[];
+	quantEngine?: string;
 }
 
 function errorMessage(error: unknown): string {
@@ -349,6 +351,10 @@ function getXdgKernelVenvDir(): string {
 	return path.join(dataHome, "prime", "agent", "kernel-venv");
 }
 
+function venvPythonPath(venv: string): string {
+	return process.platform === "win32" ? path.join(venv, "Scripts", "python.exe") : path.join(venv, "bin", "python");
+}
+
 async function resolveWritableKernelVenvDir(): Promise<string> {
 	const primary = getKernelVenvDir();
 	try {
@@ -529,10 +535,17 @@ async function ensureUv(options: EnsureKernelPythonOptions): Promise<string> {
 
 	reportProgress(options, "› installing uv (one-time)…");
 	try {
-		await run("sh", ["-c", UV_INSTALL_COMMAND], { stdio: options.onProgress ? "ignore" : "inherit" });
+		if (process.platform === "win32") {
+			await run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", UV_INSTALL_COMMAND_WIN32], {
+				stdio: options.onProgress ? "ignore" : "inherit",
+			});
+		} else {
+			await run("sh", ["-c", UV_INSTALL_COMMAND], { stdio: options.onProgress ? "ignore" : "inherit" });
+		}
 	} catch (error) {
+		const command = process.platform === "win32" ? UV_INSTALL_COMMAND_WIN32 : UV_INSTALL_COMMAND;
 		throw new Error(
-			`couldn't install uv from astral.sh; install it yourself: ${UV_INSTALL_COMMAND}, then re-run prime-agent. ${errorMessage(error)}`,
+			`couldn't install uv from astral.sh; install it yourself: ${command}, then re-run prime-agent. ${errorMessage(error)}`,
 		);
 	}
 
@@ -636,7 +649,8 @@ function bootstrapBaseVersionCurrent(version: BootstrapVersion | null, runtimeId
 		version.ipykernel === IPYKERNEL_REQUIREMENT &&
 		version.runtime === runtimeIdentity &&
 		version.snapshot === STATE_SNAPSHOT_REQUIREMENT &&
-		extraUvArgsMatch(version.extraUvArgs, DEFAULT_RLM_EXTRA_UV_ARGS)
+		extraUvArgsMatch(version.extraUvArgs, DEFAULT_RLM_EXTRA_UV_ARGS) &&
+		(version.quantEngine ?? null) === localQuantEngineIdentity()
 	);
 }
 
@@ -651,6 +665,7 @@ async function writeBootstrapVersion(
 		runtime: runtimeIdentity,
 		snapshot: STATE_SNAPSHOT_REQUIREMENT,
 		extraUvArgs: DEFAULT_RLM_EXTRA_UV_ARGS,
+		quantEngine: localQuantEngineIdentity() ?? undefined,
 		pythonSkills: [...pythonSkills],
 	};
 	await writeFile(path.join(venv, BOOTSTRAP_VERSION_FILE), `${JSON.stringify(version)}\n`, "utf8");
@@ -677,6 +692,29 @@ async function resolveRuntimeSourceDir(): Promise<string | null> {
 		}
 	}
 	return null;
+}
+
+// Repo-local quant engine (<repo>/prime-quant). Present only in the prime-quant
+// fork; when absent (upstream checkouts) all engine handling degrades to a no-op.
+function localQuantEngineCandidateDirs(): string[] {
+	const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+	return [path.resolve(moduleDir, "..", "..", "..", "..", "..", "prime-quant")];
+}
+
+function resolveLocalQuantEngineDir(): string | null {
+	for (const candidate of localQuantEngineCandidateDirs()) {
+		if (existsSync(path.join(candidate, "pyproject.toml"))) {
+			return candidate;
+		}
+	}
+	return null;
+}
+
+// The engine installs editable, so source changes are picked up live; only the
+// dependency manifest hash is needed to invalidate the venv.
+function localQuantEngineIdentity(): string | null {
+	const engineDir = resolveLocalQuantEngineDir();
+	return engineDir === null ? null : fileContentHash(path.join(engineDir, "pyproject.toml"));
 }
 
 // Identity of the runtime to be installed. For a local source checkout this is a
@@ -725,7 +763,7 @@ async function bootstrapVenv(
 ): Promise<void> {
 	await mkdir(path.dirname(venv), { recursive: true });
 	const uv = await ensureUv(options);
-	const python = path.join(venv, "bin", "python");
+	const python = venvPythonPath(venv);
 	const sourceDir = await resolveRuntimeSourceDir();
 	const runtimeRequirement = sourceDir ?? RUNTIME_REQUIREMENT;
 	const runtimeIdentity = await resolveRuntimeIdentity();
@@ -742,7 +780,19 @@ async function bootstrapVenv(
 		STATE_SNAPSHOT_REQUIREMENT,
 		...DEFAULT_RLM_EXTRA_UV_ARGS,
 	]);
+	await installLocalQuantEngine(uv, python, options);
 	await syncPythonSkills(uv, venv, python, runtimeIdentity, pythonSkills, options);
+}
+
+async function installLocalQuantEngine(uv: string, python: string, options: EnsureKernelPythonOptions): Promise<void> {
+	const engineDir = resolveLocalQuantEngineDir();
+	if (engineDir === null) return;
+	reportProgress(options, "› installing prime-quant engine (polars, numpy, optuna)…");
+	await run(uv, ["pip", "install", "--python", python, "--editable", engineDir]);
+	if (process.platform === "win32") {
+		reportProgress(options, "› installing MetaTrader5 IPC binding…");
+		await run(uv, ["pip", "install", "--python", python, "MetaTrader5"]);
+	}
 }
 
 async function syncPythonSkills(
@@ -823,10 +873,17 @@ async function syncPythonSkills(
 	await writeBootstrapVersion(venv, runtimeIdentity, installedPythonSkills);
 }
 
+async function hasLocalQuantEngine(python: string): Promise<boolean> {
+	if (resolveLocalQuantEngineDir() === null) return true;
+	const imports = process.platform === "win32" ? "primequant, MetaTrader5" : "primequant";
+	return pythonImports(python, imports);
+}
+
 async function kernelBaseReady(python: string, venv: string, runtimeIdentity: string): Promise<boolean> {
 	return (
 		(await hasIpykernel(python)) &&
 		(await hasPrimeAgentRuntime(python)) &&
+		(await hasLocalQuantEngine(python)) &&
 		bootstrapBaseVersionCurrent(await readBootstrapVersion(venv), runtimeIdentity)
 	);
 }
@@ -840,6 +897,7 @@ async function kernelReady(
 	return (
 		(await hasIpykernel(python)) &&
 		(await hasPrimeAgentRuntime(python)) &&
+		(await hasLocalQuantEngine(python)) &&
 		bootstrapVersionCurrent(await readBootstrapVersion(venv), runtimeIdentity, pythonSkills)
 	);
 }
@@ -886,7 +944,7 @@ async function ensureKernelPythonUncached(
 	}
 
 	const venv = await resolveWritableKernelVenvDir();
-	const python = path.join(venv, "bin", "python");
+	const python = venvPythonPath(venv);
 	const runtimeIdentity = await resolveRuntimeIdentity();
 	if (await kernelReady(python, venv, runtimeIdentity, pythonSkills)) return python;
 

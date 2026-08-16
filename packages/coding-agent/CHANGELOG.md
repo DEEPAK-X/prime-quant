@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fixed kernel venv bootstrap on Windows by using `Scripts\python.exe` instead of the Unix `bin/python` path; the venv, IPython kernel, and all quant skills now bootstrap and run on Windows without manual `PRIME_AGENT_KERNEL_PYTHON` overrides.
+- Added automatic installation of the repo-local `prime-quant` engine (polars, numpy, optuna) and the `MetaTrader5` IPC binding into the kernel venv when the engine directory is detected; engine source changes invalidate the venv and trigger a rebuild.
+- Added `rlm.quant.fetch_data(symbol, timeframe, bars)` to pull live OHLCV bars from the local MetaTrader 5 terminal, run QA checks, bind the frame to kernel scope as `df` / `_last_df`, and return only a compact card; supports `PRIME_QUANT_MT5_*` env overrides for non-default terminals.
+- Added `get_recent_ohlcv` and `_finalize_rates` to `primequant.data.mt5.MT5Bridge` for count-based bar queries via `copy_rates_from`.
 - Added a sub-agent delegation integration test asserting `rlm.run(..., model="tier:worker")` routes the child to the configured worker-tier model, the child's quant summary card stays under the 150-token budget, and child kernel-scope variables never leak into the parent session.
 - Added task-based model tier routing (`modelTiers` in settings, `PRIME_QUANT_TIER_*` env vars, and `tier:<name>` selectors in `rlm.run`) so the interactive loop, verification subagents, and high-throughput worker sweeps can each use a configured provider model.
 - Added an AST lookahead-bias and leakage guard to the IPython kernel that rejects strategy/backtest cells using negative shifts, `t + n` future indexing, same-bar signal execution without lag, full-dataset normalization, or scaler fitting before train/test splits; skip a cell with `# prime-quant: skip-lint` or disable with `PRIME_QUANT_AST_LINT=0`.
