@@ -41,5 +41,13 @@ collect.sh
 .kernel-venv/
 .worktrees/
 
+# Python artifacts
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.venv/
+*.parquet

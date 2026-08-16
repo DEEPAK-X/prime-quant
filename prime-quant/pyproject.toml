@@ -1,0 +1,23 @@
+[project]
+name = "prime-quant"
+version = "0.1.0"
+description = "Deterministic FX/CFD backtest & validation engine with anti-overfit guardrails"
+requires-python = ">=3.10"
+dependencies = [
+  "polars>=1.0",
+  "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+pandas = ["pandas>=2.0"]
+test = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/primequant"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
