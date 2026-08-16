@@ -5,10 +5,11 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite",
+		"dev": "vite --host 0.0.0.0 --port ${PORT:-5173}",
 		"build": "tsc --noEmit && vite build",
 		"preview": "vite preview",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"demo:backend": "node server/demo-backend.mjs"
 	},
 	"engines": {
 		"node": ">=22.12.0"
@@ -18,6 +19,7 @@
 		"react-dom": "^19.1.0"
 	},
 	"devDependencies": {
+		"ws": "^8.21.0",
 		"@tailwindcss/vite": "^4.1.0",
 		"@types/react": "^19.1.0",
 		"@types/react-dom": "^19.1.0",
