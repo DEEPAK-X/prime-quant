@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ArtifactStore, SubagentEvent, SubagentStatus } from "../lib/ws";
+import { useQuantStore } from "../lib/store";
 
 const STATUS_BADGE: Record<SubagentStatus, string> = {
 	RUNNING: "border-term-yellow text-term-yellow",
@@ -175,4 +176,10 @@ export function ArtifactPane({ subagents, tearsheetUrl, artifacts }: ArtifactPan
 			</section>
 		</div>
 	);
+}
+
+/** Convenience wrapper that reads the store and renders ArtifactPane. */
+export function ArtifactPaneConnected() {
+	const { subagents, tearsheetUrl, artifacts } = useQuantStore();
+	return <ArtifactPane subagents={subagents} tearsheetUrl={tearsheetUrl} artifacts={artifacts} />;
 }

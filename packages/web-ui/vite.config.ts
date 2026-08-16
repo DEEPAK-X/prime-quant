@@ -16,6 +16,10 @@ export default defineConfig({
 				target: BACKEND,
 				changeOrigin: true,
 			},
+			"/reports": {
+				target: BACKEND,
+				changeOrigin: true,
+			},
 			"/artifacts": {
 				target: BACKEND,
 				changeOrigin: true,

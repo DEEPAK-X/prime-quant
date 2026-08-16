@@ -1,7 +1,7 @@
 import { Fragment } from "react";
-import type { StepEvent, StepName, StepStatus } from "../lib/ws";
+import type { KnownStepName, StepEvent, StepStatus } from "../lib/ws";
 
-const PIPELINE: Array<{ name: StepName; label: string }> = [
+const PIPELINE: Array<{ name: KnownStepName; label: string }> = [
 	{ name: "ast_check", label: "AST CHECK" },
 	{ name: "backtest", label: "BACKTEST" },
 	{ name: "cpcv_gate", label: "CPCV GATE" },
@@ -22,9 +22,11 @@ const LABEL: Record<StepStatus | "idle", string> = {
 };
 
 export function PipelineStrip({ steps }: { steps: Record<string, StepEvent> }) {
-	const latest = new Map<StepName, StepStatus | "idle">(PIPELINE.map((step) => [step.name, "idle"]));
+	const latest = new Map<KnownStepName, StepStatus | "idle">(PIPELINE.map((step) => [step.name, "idle"]));
 	for (const event of Object.values(steps)) {
-		latest.set(event.name, event.status);
+		if (latest.has(event.name as KnownStepName)) {
+			latest.set(event.name as KnownStepName, event.status);
+		}
 	}
 
 	return (

@@ -1,88 +1,84 @@
 /**
- * PrimeQuant GUI <-> backend bridge.
+ * PrimeQuant GUI <-> backend bridge (v2 contract).
  *
- * The backend (daemon) on localhost:3001 exposes:
+ * The backend (demo or real bridge) on localhost:3001 exposes:
  *   - a WebSocket event stream at `/ws`
- *   - JSON REST endpoints under `/api` (subagents, artifacts, latest tearsheet)
+ *   - JSON REST endpoints under `/api` (subagents, artifacts, tearsheets, mt5)
  *
- * Event schema (server -> client):
- *   { type: "chat",      role: "user"|"assistant", text: string, id?: string }
- *   { type: "step",      id: string, name: "ast_check"|"backtest"|"cpcv_gate", status: "running"|"done"|"error", detail?: string }
- *   { type: "subagent",  id, name, tier, status: "RUNNING"|"DONE"|"ERROR", tokensPerMin?, task? }
- *   { type: "tearsheet", url: string }
- *   { type: "artifact",  kind: "py"|"mq5", name: string, content: string }
+ * Event schema is defined in `contract.ts` (mirrors the frozen doc 02). The
+ * demo backend speaks protocol v1 (no hello/chat_delta/thinking/card); the
+ * real bridge speaks protocol v2. The store accepts both and flips into demo
+ * mode when no `hello` with protocol 2 arrives within 2s of connect.
  *
- * Client -> server: { type: "chat", text: string }
+ * Streaming budget: chat_delta frames can arrive at 50/s. Per-delta setState
+ * would drop frames, so deltas are accumulated in a ref and flushed once per
+ * animation frame (rAF batching) — one setMessages per frame regardless of
+ * delta count. The reconnect/backoff logic is unchanged from the v1 store.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	type AgentState,
+	type ArtifactEvent,
+	type ArtifactStore,
+	type CardEvent,
+	type ClientMessage,
+	type ConnectionState,
+	type ErrorEvent,
+	emptyArtifactStore,
+	type HelloEvent,
+	isServerEvent,
+	type Mt5State,
+	type Protocol,
+	type ServerEvent,
+	type StepEvent,
+	type SubagentEvent,
+	type TearsheetEntry,
+	upsertArtifact,
+	upsertSubagent,
+} from "./contract";
+import type { MockSocket } from "./mock-socket";
+import { createMockSocket, shouldUseMockSocket } from "./mock-socket";
+import { applyChat, applyChatDelta, applyThinking, type ChatMessage, type ThinkingBlock } from "./reducer";
 
-export type StepName = "ast_check" | "backtest" | "cpcv_gate";
-export type StepStatus = "running" | "done" | "error";
-export type SubagentStatus = "RUNNING" | "DONE" | "ERROR";
-export type ArtifactKind = "py" | "mq5";
-export type ConnectionState = "connecting" | "open" | "closed";
+/** Transport surface both the real WebSocket and MockSocket satisfy. */
+type SocketTransport = WebSocket | MockSocket;
 
-export interface StepEvent {
-	type: "step";
-	id: string;
-	name: StepName;
-	status: StepStatus;
-	detail?: string;
-}
+/** readyState value for an open socket (WebSocket.OPEN / MockSocket open). */
+const SOCKET_OPEN = 1;
 
-export interface ChatEvent {
-	type: "chat";
-	role: "user" | "assistant";
-	text: string;
-	id?: string;
-}
+export type {
+	AgentState,
+	ArtifactKind,
+	ArtifactStore,
+	Backend,
+	CardEvent,
+	CardMetric,
+	CardPayload,
+	ChatDeltaEvent,
+	ChatEvent,
+	ClientMessage,
+	ConnectionState,
+	ErrorEvent,
+	ErrorScope,
+	HelloEvent,
+	KnownStepName,
+	Mt5Detail,
+	Mt5State,
+	Protocol,
+	ServerEvent,
+	StepEvent,
+	StepStatus,
+	SubagentEvent,
+	SubagentStatus,
+	TearsheetEntry,
+	TearsheetEvent,
+	ThinkingEvent,
+	ValidationGate,
+} from "./contract";
+export type { ChatMessage, ThinkingBlock } from "./reducer";
 
-export interface SubagentEvent {
-	type: "subagent";
-	id: string;
-	name: string;
-	tier: string;
-	status: SubagentStatus;
-	tokensPerMin?: number;
-	task?: string;
-}
-
-export interface TearsheetEvent {
-	type: "tearsheet";
-	url: string;
-}
-
-export interface ArtifactEvent {
-	type: "artifact";
-	kind: ArtifactKind;
-	name: string;
-	content: string;
-}
-
-export type QuantEvent = StepEvent | ChatEvent | SubagentEvent | TearsheetEvent | ArtifactEvent;
-
-export interface ArtifactStore {
-	py: ArtifactEvent[];
-	mq5: ArtifactEvent[];
-}
-
-function isQuantEvent(value: unknown): value is QuantEvent {
-	if (typeof value !== "object" || value === null) return false;
-	const event = value as Record<string, unknown>;
-	switch (event.type) {
-		case "chat":
-			return event.role === "user" || event.role === "assistant";
-		case "step":
-			return typeof event.id === "string" && typeof event.name === "string" && typeof event.status === "string";
-		case "subagent":
-			return typeof event.id === "string" && typeof event.name === "string" && typeof event.status === "string";
-		case "tearsheet":
-			return typeof event.url === "string";
-		case "artifact":
-			return (event.kind === "py" || event.kind === "mq5") && typeof event.content === "string";
-		default:
-			return false;
-	}
+export interface QuantError extends ErrorEvent {
+	readonly ts: string;
 }
 
 function wsEndpoint(): string {
@@ -112,72 +108,242 @@ interface ArtifactsResponse {
 	artifacts?: ArtifactEvent[];
 }
 
-interface TearsheetResponse {
+interface TearsheetLatestResponse {
 	url?: string;
+	name?: string;
+	ts?: string;
 }
 
-function upsertSubagent(existing: Record<string, SubagentEvent>, event: SubagentEvent): Record<string, SubagentEvent> {
-	return { ...existing, [event.id]: event };
+interface TearsheetsResponse {
+	tearsheets?: TearsheetEntry[];
 }
 
-function upsertArtifact(list: ArtifactEvent[], event: ArtifactEvent): ArtifactEvent[] {
-	return [...list.filter((entry) => entry.name !== event.name), event];
+interface HealthResponse {
+	ok?: boolean;
+	backend?: string;
+	agentState?: AgentState;
 }
+
+type Mt5Response = Mt5State;
+
+const DEMO_TIMEOUT_MS = 2000;
+const MAX_ERRORS = 20;
+const MAX_TEARSHEETS = 50;
+
+/** Initial state shared by every fresh connect (snapshots rebuild it). */
+const UNKNOWN_MT5: Mt5State = { status: "unknown", detail: null };
 
 export interface QuantSocket {
 	connection: ConnectionState;
-	messages: ChatEvent[];
+	protocol: Protocol | null;
+	backend: string | null;
+	agentState: AgentState | null;
+	mt5: Mt5State;
+	sessionId: string | null;
+	demo: boolean;
+	messages: ChatMessage[];
+	thinking: Record<string, ThinkingBlock>;
 	steps: Record<string, StepEvent>;
 	subagents: Record<string, SubagentEvent>;
+	cards: Record<string, CardEvent>;
+	tearsheets: TearsheetEntry[];
 	tearsheetUrl: string | null;
 	artifacts: ArtifactStore;
+	errors: QuantError[];
 	sendMessage: (text: string) => void;
+	interrupt: () => void;
+	refreshMt5: () => void;
 }
 
 /**
- * Owns the WebSocket lifecycle (exponential backoff reconnect) and merges the
- * REST snapshots (subagents / artifacts / latest tearsheet) on connect.
+ * Owns the WebSocket lifecycle (exponential backoff reconnect, unchanged from
+ * v1), merges the REST snapshots on connect, and reduces every v2 event into
+ * typed state slices. chat_delta frames are batched through rAF so a 50/s
+ * stream produces at most one setMessages per animation frame.
  */
 export function useQuantSocket(): QuantSocket {
 	const [connection, setConnection] = useState<ConnectionState>("connecting");
-	const [messages, setMessages] = useState<ChatEvent[]>([]);
+	const [protocol, setProtocol] = useState<Protocol | null>(null);
+	const [backend, setBackend] = useState<string | null>(null);
+	const [agentState, setAgentState] = useState<AgentState | null>(null);
+	const [mt5, setMt5] = useState<Mt5State>(UNKNOWN_MT5);
+	const [sessionId, setSessionId] = useState<string | null>(null);
+	const [demo, setDemo] = useState(false);
+	const [messages, setMessages] = useState<ChatMessage[]>([]);
+	const [thinking, setThinking] = useState<Record<string, ThinkingBlock>>({});
 	const [steps, setSteps] = useState<Record<string, StepEvent>>({});
 	const [subagents, setSubagents] = useState<Record<string, SubagentEvent>>({});
+	const [cards, setCards] = useState<Record<string, CardEvent>>({});
+	const [tearsheets, setTearsheets] = useState<TearsheetEntry[]>([]);
 	const [tearsheetUrl, setTearsheetUrl] = useState<string | null>(null);
-	const [artifacts, setArtifacts] = useState<ArtifactStore>({ py: [], mq5: [] });
-	const socketRef = useRef<WebSocket | null>(null);
+	const [artifacts, setArtifacts] = useState<ArtifactStore>(emptyArtifactStore());
+	const [errors, setErrors] = useState<QuantError[]>([]);
+	const socketRef = useRef<SocketTransport | null>(null);
+
+	// rAF-batched chat_delta accumulator: deltas pile up in this ref and are
+	// flushed as a single setMessages on the next animation frame.
+	const deltaBuffer = useRef<Map<string, { id: string; chunks: string[] }>>(new Map());
+	const rafHandle = useRef<number | null>(null);
+
+	const flushDeltas = useCallback(() => {
+		rafHandle.current = null;
+		const buffer = deltaBuffer.current;
+		if (buffer.size === 0) return;
+		const entries = Array.from(buffer.values());
+		buffer.clear();
+		setMessages((prev) => {
+			let next = prev;
+			for (const { id, chunks } of entries) {
+				next = applyChatDelta(next, id, chunks.join(""));
+			}
+			return next;
+		});
+	}, []);
+
+	const scheduleFlush = useCallback(() => {
+		if (rafHandle.current !== null) return;
+		rafHandle.current = window.requestAnimationFrame(flushDeltas);
+	}, [flushDeltas]);
+
+	const pushError = useCallback((event: ErrorEvent) => {
+		const quantError: QuantError = { ...event, ts: new Date().toISOString() };
+		setErrors((prev) => [...prev, quantError].slice(-MAX_ERRORS));
+	}, []);
 
 	useEffect(() => {
 		let disposed = false;
-		let socket: WebSocket | null = null;
+		let socket: SocketTransport | null = null;
 		let retryTimer: number | undefined;
 		let attempts = 0;
+		let demoTimer: number | undefined;
+
+		const applyHello = (event: HelloEvent) => {
+			setProtocol(event.protocol);
+			setBackend(event.backend);
+			setAgentState(event.agentState);
+			setSessionId(event.sessionId);
+			setMt5(event.mt5);
+			setDemo(event.protocol !== 2);
+			if (demoTimer !== undefined) {
+				window.clearTimeout(demoTimer);
+				demoTimer = undefined;
+			}
+		};
+
+		const handleEvent = (payload: ServerEvent) => {
+			switch (payload.type) {
+				case "hello":
+					applyHello(payload);
+					break;
+				case "agent_state":
+					setAgentState(payload.state);
+					break;
+				case "chat":
+					setMessages((prev) => applyChat(prev, payload));
+					break;
+				case "chat_delta": {
+					const entry = deltaBuffer.current.get(payload.id);
+					if (entry) {
+						entry.chunks.push(payload.delta);
+					} else {
+						deltaBuffer.current.set(payload.id, { id: payload.id, chunks: [payload.delta] });
+					}
+					scheduleFlush();
+					break;
+				}
+				case "thinking":
+					setThinking((prev) => applyThinking(prev, payload.id, payload.delta, payload.done));
+					break;
+				case "step":
+					setSteps((prev) => ({ ...prev, [payload.id]: payload }));
+					break;
+				case "subagent":
+					setSubagents((prev) => upsertSubagent(prev, payload));
+					break;
+				case "tearsheet":
+					setTearsheetUrl(payload.url);
+					setTearsheets((prev) => {
+						const filtered = prev.filter((entry) => entry.url !== payload.url);
+						const next = [{ url: payload.url, name: payload.name, ts: payload.ts }, ...filtered];
+						return next.slice(0, MAX_TEARSHEETS);
+					});
+					break;
+				case "artifact":
+					setArtifacts((prev) => ({ ...prev, [payload.kind]: upsertArtifact(prev[payload.kind], payload) }));
+					break;
+				case "card":
+					setCards((prev) => ({ ...prev, [payload.id]: payload }));
+					break;
+				case "error":
+					pushError(payload);
+					break;
+			}
+		};
 
 		const connect = () => {
 			setConnection("connecting");
-			socket = new WebSocket(wsEndpoint());
+			socket = shouldUseMockSocket() ? createMockSocket() : new WebSocket(wsEndpoint());
 			socketRef.current = socket;
 			socket.onopen = () => {
 				attempts = 0;
 				setConnection("open");
+				// If no protocol-2 hello arrives within 2s, assume demo backend.
+				demoTimer = window.setTimeout(() => {
+					if (disposed) return;
+					setProtocol((current) => {
+						if (current === null) {
+							setDemo(true);
+							setBackend("demo");
+							return 1;
+						}
+						return current;
+					});
+				}, DEMO_TIMEOUT_MS);
+				void fetchJson<HealthResponse>("/health").then((data) => {
+					if (disposed || !data) return;
+					if (data.agentState) setAgentState(data.agentState);
+				});
 				void fetchJson<SubagentsResponse>("/subagents").then((data) => {
-					const subagents = data?.subagents;
-					if (disposed || !subagents) return;
-					setSubagents((prev) => subagents.reduce(upsertSubagent, prev));
+					const list = data?.subagents;
+					if (disposed || !list) return;
+					setSubagents((prev) => list.reduce(upsertSubagent, prev));
 				});
 				void fetchJson<ArtifactsResponse>("/artifacts?kind=py").then((data) => {
-					const artifacts = data?.artifacts;
-					if (disposed || !artifacts) return;
-					setArtifacts((prev) => ({ ...prev, py: [...prev.py, ...artifacts] }));
+					const list = data?.artifacts;
+					if (disposed || !list) return;
+					setArtifacts((prev) => ({
+						...prev,
+						py: list.reduce((acc, event) => upsertArtifact(acc, event), prev.py),
+					}));
 				});
 				void fetchJson<ArtifactsResponse>("/artifacts?kind=mq5").then((data) => {
-					const artifacts = data?.artifacts;
-					if (disposed || !artifacts) return;
-					setArtifacts((prev) => ({ ...prev, mq5: [...prev.mq5, ...artifacts] }));
+					const list = data?.artifacts;
+					if (disposed || !list) return;
+					setArtifacts((prev) => ({
+						...prev,
+						mq5: list.reduce((acc, event) => upsertArtifact(acc, event), prev.mq5),
+					}));
 				});
-				void fetchJson<TearsheetResponse>("/tearsheet/latest").then((data) => {
+				void fetchJson<ArtifactsResponse>("/artifacts?kind=md").then((data) => {
+					const list = data?.artifacts;
+					if (disposed || !list) return;
+					setArtifacts((prev) => ({
+						...prev,
+						md: list.reduce((acc, event) => upsertArtifact(acc, event), prev.md),
+					}));
+				});
+				void fetchJson<TearsheetLatestResponse>("/tearsheet/latest").then((data) => {
 					if (disposed || !data?.url) return;
 					setTearsheetUrl(data.url);
+				});
+				void fetchJson<TearsheetsResponse>("/tearsheets").then((data) => {
+					const list = data?.tearsheets;
+					if (disposed || !list) return;
+					setTearsheets(list.slice(0, MAX_TEARSHEETS));
+				});
+				void fetchJson<Mt5Response>("/mt5").then((data) => {
+					if (disposed || !data) return;
+					setMt5(data);
 				});
 			};
 
@@ -188,32 +354,8 @@ export function useQuantSocket(): QuantSocket {
 				} catch {
 					return;
 				}
-				if (!isQuantEvent(payload)) return;
-				switch (payload.type) {
-					case "chat":
-						setMessages((prev) => {
-							// The client appends user messages optimistically; a
-							// server echo of the same text must not duplicate it.
-							if (payload.role === "user" && prev.length > 0) {
-								const last = prev[prev.length - 1];
-								if (last.role === "user" && last.text === payload.text) return prev;
-							}
-							return [...prev, payload];
-						});
-						break;
-					case "step":
-						setSteps((prev) => ({ ...prev, [payload.id]: payload }));
-						break;
-					case "subagent":
-						setSubagents((prev) => upsertSubagent(prev, payload));
-						break;
-					case "tearsheet":
-						setTearsheetUrl(payload.url);
-						break;
-					case "artifact":
-						setArtifacts((prev) => ({ ...prev, [payload.kind]: upsertArtifact(prev[payload.kind], payload) }));
-						break;
-				}
+				if (!isServerEvent(payload)) return;
+				handleEvent(payload);
 			};
 
 			socket.onerror = () => {
@@ -223,6 +365,11 @@ export function useQuantSocket(): QuantSocket {
 			socket.onclose = () => {
 				if (disposed) return;
 				setConnection("closed");
+				if (rafHandle.current !== null) {
+					window.cancelAnimationFrame(rafHandle.current);
+					rafHandle.current = null;
+				}
+				deltaBuffer.current.clear();
 				const delay = Math.min(1000 * 2 ** attempts, 15000);
 				attempts += 1;
 				retryTimer = window.setTimeout(connect, delay);
@@ -234,19 +381,60 @@ export function useQuantSocket(): QuantSocket {
 		return () => {
 			disposed = true;
 			if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+			if (demoTimer !== undefined) window.clearTimeout(demoTimer);
+			if (rafHandle.current !== null) window.cancelAnimationFrame(rafHandle.current);
+			rafHandle.current = null;
 			socket?.close();
 			socketRef.current = null;
 		};
+	}, [scheduleFlush, pushError]);
+
+	const send = useCallback((message: ClientMessage) => {
+		const socket = socketRef.current;
+		if (socket === null || socket.readyState !== SOCKET_OPEN) return;
+		socket.send(JSON.stringify(message));
 	}, []);
 
-	const sendMessage = useCallback((text: string) => {
-		const trimmed = text.trim();
-		if (!trimmed) return;
-		setMessages((prev) => [...prev, { type: "chat", role: "user", text: trimmed, id: `local-${Date.now()}` }]);
-		if (socketRef.current?.readyState === WebSocket.OPEN) {
-			socketRef.current.send(JSON.stringify({ type: "chat", text: trimmed }));
-		}
-	}, []);
+	const sendMessage = useCallback(
+		(text: string) => {
+			const trimmed = text.trim();
+			if (!trimmed) return;
+			setMessages((prev) => [
+				...prev,
+				{ type: "chat", role: "user", text: trimmed, id: `local-${Date.now()}`, streaming: false },
+			]);
+			send({ type: "chat", text: trimmed });
+		},
+		[send],
+	);
 
-	return { connection, messages, steps, subagents, tearsheetUrl, artifacts, sendMessage };
+	const interrupt = useCallback(() => {
+		send({ type: "interrupt" });
+	}, [send]);
+
+	const refreshMt5 = useCallback(() => {
+		send({ type: "refresh_mt5" });
+	}, [send]);
+
+	return {
+		connection,
+		protocol,
+		backend,
+		agentState,
+		mt5,
+		sessionId,
+		demo,
+		messages,
+		thinking,
+		steps,
+		subagents,
+		cards,
+		tearsheets,
+		tearsheetUrl,
+		artifacts,
+		errors,
+		sendMessage,
+		interrupt,
+		refreshMt5,
+	};
 }
