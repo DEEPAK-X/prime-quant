@@ -16,6 +16,8 @@
 		"dev:tsc": "cd packages/ai && npm run dev:tsc",
 		"gui": "npm run dev --workspace web-ui",
 		"server": "node packages/web-ui/server/preview.mjs",
+		"tui": "tsx packages/coding-agent/src/cli.ts",
+		"start": "tsx packages/coding-agent/src/cli.ts",
 		"check": "biome check --write --error-on-warnings . && tsgo --noEmit && npm run check:installer && npm run check:browser-smoke",
 		"check:installer": "node scripts/check-installer-render.mjs",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
