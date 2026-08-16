@@ -286,6 +286,14 @@ Per-environment overrides win over the settings file: `PRIME_QUANT_TIER_ORCHESTR
 
 The IPython kernel runs an AST linter before every cell and rejects (without executing) strategy/backtest code that contains lookahead bias or leakage: negative shifts (`.shift(-1)`), future indexing (`t + 1`), same-bar signal execution without lag (`signal * ret` without `.shift(1)`), full-dataset normalization (`(df - df.mean()) / df.std()`), and scaler fits on the full dataset before a `train_test_split`. Add `# prime-quant: skip-lint` to a cell to bypass it, call `rlm.lint.disable()` / `rlm.lint.enable()` from the kernel to toggle it, or set `PRIME_QUANT_AST_LINT=0` before starting to disable it entirely. `rlm.lint.check(source)` and `rlm.lint.lint_file(path)` are available for agent-facing checks.
 
+### Quant research: skills bundle & context compression
+
+The bundled `quant` skill exposes three agent-facing skills as `rlm.quant` in the IPython kernel:
+
+- `await rlm.quant.idea_to_spec(prompt)` — parses a trader prompt into a deterministic `StrategySpec` (asset class, symbol/timeframe, entry/exit hypothesis, risk model with ATR/pips stop-loss and 100k-unit lot sizing, execution model with slippage/spread/commission) and surfaces every defaulted assumption before any backtest code runs.
+- `await rlm.quant.run_backtest(spec_or_prompt, data=None)` — runs an in-memory backtest through the `primequant` engine and returns **only** a compact JSON summary card (`sharpe_ratio`, `sortino_ratio`, `calmar_ratio`, `max_drawdown_pct`, `profit_factor`, `win_rate`, `expectancy_usd`, `trades_count`) plus a `validation_gate` (CPCV / walk-forward / DSR / PBO) when the validation engine is installed. Raw DataFrames, equity curves, and trade lists stay bound in the kernel scope as `_last_backtest_df`, `_last_equity_curve`, `_last_trades` for subagent inspection — never printed into context (150-token card budget).
+- `await rlm.quant.refine_log_failure(...)` — records failed backtest/validation/AST patterns into `rlm.harness` memory (idempotent per pattern) so the `/refine` loop stops repeating the same structural mistakes.
+
 ## Context Files
 
 Prime Agent loads `AGENTS.md` (or `CLAUDE.md`) at startup from:

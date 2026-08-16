@@ -72,6 +72,9 @@ def calmar_ratio(equity: Iterable[float], *, periods_per_year: int = PERIODS_PER
     if mdd == 0:
         return 0.0
     total_return = arr[-1] / arr[0] - 1.0
+    if total_return <= -1.0:
+        # Equity at or below zero: annualized return is undefined.
+        return 0.0
     years = arr.size / periods_per_year
     if years <= 0:
         return 0.0

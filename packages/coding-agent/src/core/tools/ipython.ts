@@ -73,6 +73,13 @@ try:
         rlm.lint = _prime_agent_ast_linter
 except Exception as _prime_agent_ast_linter_error:
     _PRIME_AGENT_AST_LINTER_INSTALL_ERROR = str(_prime_agent_ast_linter_error)
+
+try:
+    import quant as _prime_agent_quant_skill
+    if hasattr(_prime_agent_quant_skill, "run_backtest"):
+        rlm.quant = _prime_agent_quant_skill
+except Exception as _prime_agent_quant_skill_error:
+    _PRIME_AGENT_QUANT_SKILL_IMPORT_ERROR = str(_prime_agent_quant_skill_error)
 `.trim();
 
 export function buildRlmBootstrapCode(pythonSkills: readonly PythonSkillRuntimeInfo[] = []): string {
