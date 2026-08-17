@@ -9,6 +9,7 @@ function resolveBranchWithGitSync(repoDir: string): string | null {
 	const result = spawnSync("git", ["--no-optional-locks", "symbolic-ref", "--quiet", "--short", "HEAD"], {
 		cwd: repoDir,
 		encoding: "utf8",
+		windowsHide: true,
 		stdio: ["ignore", "pipe", "ignore"],
 	});
 	const branch = result.status === 0 ? result.stdout.trim() : "";
@@ -24,6 +25,7 @@ function resolveBranchWithGitAsync(repoDir: string): Promise<string | null> {
 			{
 				cwd: repoDir,
 				encoding: "utf8",
+				windowsHide: true,
 			},
 			(error: ExecFileException | null, stdout: string) => {
 				if (error) {

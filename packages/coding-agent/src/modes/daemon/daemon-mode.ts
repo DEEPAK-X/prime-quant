@@ -172,6 +172,7 @@ import { DaemonSessionSummarizer } from "./daemon-session-summarizer.js";
 import {
 	cleanupDaemonSocketPath,
 	type DaemonSocketIdentity,
+	defaultDaemonSocketDir,
 	defaultDaemonSocketPath,
 	getDaemonSocketIdentity,
 	prepareDaemonSocketPath,
@@ -793,7 +794,9 @@ export class AgentDaemon {
 		}
 		this.supervisorLaunchInProgress = true;
 		const key = createHash("sha256").update(supervisorSocketPath).digest("hex").slice(0, 12);
-		const lockDirectory = join(dirname(supervisorSocketPath), `.supervisor-launch-${key}.lock`);
+		const baseDir = process.platform === "win32" ? defaultDaemonSocketDir() : dirname(supervisorSocketPath);
+		mkdirSync(baseDir, { recursive: true });
+		const lockDirectory = join(baseDir, `.supervisor-launch-${key}.lock`);
 		let ownsLock = false;
 		try {
 			for (let attempt = 0; attempt < 3 && !ownsLock; attempt++) {

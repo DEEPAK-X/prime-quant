@@ -2382,6 +2382,7 @@ export class DefaultPackageManager implements PackageManager {
 			cwd: options?.cwd,
 			stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
 			shell: shouldUseWindowsShell(command),
+			windowsHide: true,
 			env: getEnv(),
 		});
 	}
@@ -2396,6 +2397,7 @@ export class DefaultPackageManager implements PackageManager {
 			cwd: options?.cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 			shell: shouldUseWindowsShell(command),
+			windowsHide: true,
 			env: options?.env ? { ...baseEnv, ...options.env } : baseEnv,
 		});
 	}

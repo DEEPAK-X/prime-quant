@@ -61,6 +61,7 @@ export async function execCommand(
 		const proc = spawn(command, args, {
 			cwd,
 			shell: false,
+			windowsHide: true,
 			stdio: ["ignore", "pipe", "pipe"],
 			// Merge per-call env over the parent env so callers can scope vars
 			// (e.g. herdr pane identity) without mutating the shared process.env.

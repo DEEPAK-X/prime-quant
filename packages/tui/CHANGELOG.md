@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added windowsHide: true to file autocomplete child processes on Windows.
 - Fixed hyperlinks not being clickable in fullscreen mode on terminals that gate native link handling while mouse reporting is active (e.g. Ghostty); left-clicking a link now opens it directly.
 
 ## [0.7.2] - 2026-08-11

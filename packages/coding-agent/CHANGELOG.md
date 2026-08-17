@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fixed directory fsync EPERM errors in command recovery journal and supervisor launch lock directory creation on Windows.
 - Fixed Windows console window flashing during Python kernel bootstrap and process start-time queries, and resolved daemon worker authentication timeouts.
 - Changed daemon catalog process startup timeout to 20 seconds to prevent premature timeouts during catalog initialization.
 

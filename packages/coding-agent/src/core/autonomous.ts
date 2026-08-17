@@ -494,6 +494,7 @@ function runChildProcess(
 		const child = spawn(command, args, {
 			cwd: options.cwd,
 			detached: process.platform !== "win32",
+			windowsHide: true,
 			shell: options.shell === true,
 			stdio: ["ignore", "pipe", "pipe"],
 		});

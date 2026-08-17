@@ -18,7 +18,7 @@ export function openUrl(url: string): void {
 				? [join(systemRoot, "System32", "rundll32.exe"), "url.dll,FileProtocolHandler", url]
 				: ["xdg-open", url];
 	try {
-		execFile(command, args, () => {});
+		execFile(command, args, { windowsHide: true }, () => {});
 	} catch {
 		// Best-effort: caller has printed the URL as a manual fallback.
 	}
