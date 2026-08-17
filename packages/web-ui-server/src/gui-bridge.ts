@@ -18,12 +18,19 @@
  * event stream on its own and forwards events to WebSocket clients, while the
  * HTTP request thread drives turns via `prompt`/`promptAndWait` which themselves
  * resolve without holding the kernel.
+ *
+ * `createV2GuiBridge` implements the GUI v2 contract (docs/gui-wiring/02):
+ * WS `/ws` with a `hello` first frame plus REST snapshots, all backed by one
+ * in-memory state store fed by the same `emit` path that broadcasts events.
  */
 
 import { createReadStream, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { isAbsolute, resolve as pathResolve, relative } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
+
+import type { AgentState, Mt5Status, V2Event } from "./events.js";
+import { safeReportName } from "./tearsheets.js";
 
 export const DEFAULT_PORT = 3001;
 // Bind IPv4 explicitly: on some hosts `localhost` resolves to ::1 while
@@ -288,4 +295,331 @@ function readBody(req: IncomingMessage): Promise<string> {
 		req.on("end", () => resolve(data));
 		req.on("error", reject);
 	});
+}
+
+// ---------------------------------------------------------------------------
+// GUI v2 contract surface (docs/gui-wiring/02-api-contract.md)
+// ---------------------------------------------------------------------------
+
+export interface V2BridgeSession {
+	prompt(message: string): Promise<void>;
+	interrupt(): Promise<void>;
+	getAgentState(): AgentState;
+}
+
+export interface V2BridgeMt5 {
+	/** Cached MT5 status; probes only when stale (see mt5.ts). */
+	getStatus(): Promise<Mt5Status>;
+	/** Force a fresh probe (WS `refresh_mt5`). */
+	refresh(): Promise<Mt5Status>;
+}
+
+export interface V2GuiBridgeOptions {
+	port?: number;
+	host?: string;
+	/** Inject an http server (tests). */
+	server?: Server;
+	session: V2BridgeSession;
+	mt5: V2BridgeMt5;
+	sessionId: string | null;
+	/** Repo root — `/reports/` files are served from here (traversal-safe). */
+	artifactsRoot: string;
+	log?: (message: string) => void;
+}
+
+export interface V2GuiBridge {
+	readonly port: number;
+	readonly host: string;
+	readonly server: Server;
+	start(): Promise<void>;
+	stop(): Promise<void>;
+	/** Feed a v2 event into the state store and broadcast it to `/ws` clients. */
+	emit(event: V2Event): void;
+	/** Current agent state, for the `hello` frame and `/api/health`. */
+	getAgentState(): AgentState;
+}
+
+/**
+ * v2 bridge: WS `/ws` (hello first frame + broadcast + client chat/interrupt/
+ * refresh_mt5) and the REST snapshot endpoints, backed by one in-memory store
+ * fed by `emit` — the single source of truth for both WS push and REST reads.
+ * Binds `127.0.0.1` explicitly (never `0.0.0.0`).
+ */
+export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
+	const port = options.port ?? DEFAULT_PORT;
+	const host = options.host ?? DEFAULT_HOST;
+	const server = options.server ?? createServer();
+	const wss = new WebSocketServer({ noServer: true });
+	const clients = new Set<WebSocket>();
+	const log = options.log ?? (() => {});
+
+	const store = {
+		agentState: "starting" as AgentState,
+		subagents: new Map<string, Extract<V2Event, { type: "subagent" }>>(),
+		artifacts: new Map<string, Extract<V2Event, { type: "artifact" }>>(),
+		tearsheets: new Map<string, Extract<V2Event, { type: "tearsheet" }>>(),
+	};
+
+	const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
+		res.writeHead(status, JSON_HEADERS);
+		res.end(JSON.stringify(body));
+	};
+
+	const sortedTearsheets = () => [...store.tearsheets.values()].sort((a, b) => ((a.ts ?? "") < (b.ts ?? "") ? 1 : -1));
+
+	const applyEvent = (event: V2Event): void => {
+		switch (event.type) {
+			case "agent_state":
+				store.agentState = event.state;
+				break;
+			case "subagent":
+				store.subagents.set(event.id, event);
+				break;
+			case "artifact":
+				store.artifacts.set(`${event.kind}:${event.name}`, event);
+				break;
+			case "tearsheet":
+				store.tearsheets.set(event.name ?? event.url, event);
+				break;
+			default:
+				break;
+		}
+	};
+
+	const emit = (event: V2Event): void => {
+		applyEvent(event);
+		const text = JSON.stringify(event);
+		for (const client of clients) {
+			if (client.readyState === WS_OPEN) client.send(text);
+		}
+	};
+
+	const sendHello = (ws: WebSocket, mt5: Mt5Status): void => {
+		ws.send(
+			JSON.stringify({
+				type: "hello",
+				protocol: 2,
+				backend: "bridge",
+				agentState: store.agentState,
+				sessionId: options.sessionId,
+				mt5,
+			} satisfies V2Event),
+		);
+	};
+
+	server.on("upgrade", (req, socket, head) => {
+		if (req.url === "/ws") {
+			wss.handleUpgrade(req, socket, head, (ws) => {
+				clients.add(ws);
+				ws.on("close", () => clients.delete(ws));
+				// First frame is always `hello` (contract §1.1); probe MT5 once.
+				void options.mt5
+					.getStatus()
+					.then((status) => {
+						if (ws.readyState === WS_OPEN) sendHello(ws, status);
+					})
+					.catch((error) => {
+						log(`[bridge] mt5 hello probe failed: ${String(error)}`);
+						if (ws.readyState === WS_OPEN) {
+							sendHello(ws, { status: "unknown", detail: null, checkedAt: null });
+						}
+					});
+				// Client -> server: chat / interrupt / refresh_mt5 (contract §2).
+				ws.on("message", (raw) => {
+					let payload: unknown;
+					try {
+						const text = Buffer.isBuffer(raw)
+							? raw.toString()
+							: Array.isArray(raw)
+								? Buffer.concat(raw).toString()
+								: Buffer.from(raw).toString();
+						payload = JSON.parse(text) as unknown;
+					} catch {
+						return;
+					}
+					if (typeof payload !== "object" || payload === null) return;
+					const record = payload as Record<string, unknown>;
+					switch (record.type) {
+						case "chat": {
+							const text = typeof record.text === "string" ? record.text.trim() : "";
+							if (!text) return;
+							void options.session.prompt(text).catch((error) => {
+								log(`[bridge] prompt failed: ${String(error)}`);
+								emit({ type: "error", scope: "bridge", message: String(error), fatal: false });
+							});
+							break;
+						}
+						case "interrupt":
+							void options.session.interrupt().catch((error) => {
+								log(`[bridge] interrupt failed: ${String(error)}`);
+							});
+							break;
+						case "refresh_mt5":
+							void options.mt5
+								.refresh()
+								.then((status) => {
+									if (ws.readyState === WS_OPEN) sendHello(ws, status);
+								})
+								.catch((error) => {
+									log(`[bridge] mt5 refresh failed: ${String(error)}`);
+								});
+							break;
+						default:
+							break;
+					}
+				});
+			});
+		} else {
+			socket.destroy();
+		}
+	});
+
+	server.on("request", async (req: IncomingMessage, res: ServerResponse) => {
+		const url = new URL(req.url ?? "/", `http://${host}`);
+		const path = url.pathname;
+		const method = req.method ?? "GET";
+
+		if (path === "/api/health") {
+			if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+			sendJson(res, 200, { ok: true, backend: "bridge", agentState: store.agentState });
+			return;
+		}
+
+		if (path === "/api/subagents") {
+			if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+			sendJson(res, 200, { subagents: [...store.subagents.values()] });
+			return;
+		}
+
+		if (path === "/api/artifacts") {
+			if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+			const kind = url.searchParams.get("kind");
+			if (kind !== null && kind !== "py" && kind !== "mq5" && kind !== "md") {
+				sendJson(res, 400, { error: "invalid kind" });
+				return;
+			}
+			const artifacts = [...store.artifacts.values()].filter((event) => kind === null || event.kind === kind);
+			sendJson(res, 200, { artifacts });
+			return;
+		}
+
+		if (path === "/api/tearsheet/latest") {
+			if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+			const latest = sortedTearsheets()[0];
+			if (!latest) {
+				res.writeHead(204);
+				res.end();
+				return;
+			}
+			sendJson(res, 200, { url: latest.url, name: latest.name, ts: latest.ts });
+			return;
+		}
+
+		if (path === "/api/tearsheets") {
+			if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+			sendJson(res, 200, { tearsheets: sortedTearsheets() });
+			return;
+		}
+
+		if (path === "/api/mt5") {
+			if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+			try {
+				sendJson(res, 200, await options.mt5.getStatus());
+			} catch (error) {
+				log(`[bridge] mt5 probe failed: ${String(error)}`);
+				sendJson(res, 200, { status: "unknown", detail: null, checkedAt: null });
+			}
+			return;
+		}
+
+		if (method === "GET" && path.startsWith("/reports/")) {
+			const encoded = path.slice("/reports/".length);
+			let decoded: string;
+			try {
+				decoded = decodeURIComponent(encoded);
+			} catch {
+				sendJson(res, 404, { error: "not found" });
+				return;
+			}
+			const name = safeReportName(decoded);
+			const resolved = name ? resolveArtifactPath(options.artifactsRoot, name) : null;
+			if (!resolved) {
+				sendJson(res, 404, { error: "not found" });
+				return;
+			}
+			let stats: ReturnType<typeof statSync> | undefined;
+			try {
+				stats = statSync(resolved);
+			} catch {
+				sendJson(res, 404, { error: "not found" });
+				return;
+			}
+			if (!stats.isFile()) {
+				sendJson(res, 404, { error: "not found" });
+				return;
+			}
+			res.writeHead(200, {
+				"content-type": "text/html; charset=utf-8",
+				"content-length": stats.size,
+				"cache-control": "no-store",
+			});
+			createReadStream(resolved).pipe(res);
+			return;
+		}
+
+		if (method === "GET" && path === "/api/artifacts/serve") {
+			const requested = url.searchParams.get("path") ?? undefined;
+			const resolved = resolveArtifactPath(options.artifactsRoot, requested);
+			if (!resolved) {
+				sendJson(res, 400, { error: "path is outside the allowlisted artifacts root" });
+				return;
+			}
+			let stats: ReturnType<typeof statSync> | undefined;
+			try {
+				stats = statSync(resolved);
+			} catch {
+				sendJson(res, 404, { error: "artifact not found" });
+				return;
+			}
+			if (!stats.isFile()) {
+				sendJson(res, 404, { error: "not a file" });
+				return;
+			}
+			res.writeHead(200, {
+				"content-type": mimeFor(resolved),
+				"content-length": stats.size,
+				"cache-control": "no-store",
+			});
+			createReadStream(resolved).pipe(res);
+			return;
+		}
+
+		// WebSocket is the source of truth; unknown REST paths 404 without crashing.
+		sendJson(res, 404, { error: "not found" });
+	});
+
+	return {
+		port,
+		host,
+		server,
+		start() {
+			return new Promise((resolve, reject) => {
+				server.once("error", reject);
+				server.listen(port, host, () => {
+					server.removeListener("error", reject);
+					resolve();
+				});
+			});
+		},
+		async stop() {
+			for (const client of clients) client.close();
+			clients.clear();
+			wss.close();
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+		},
+		emit,
+		getAgentState() {
+			return store.agentState;
+		},
+	};
 }
