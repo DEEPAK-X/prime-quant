@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added `rlm.quant.recall_failures(kind=None)`, the read counterpart to `refine_log_failure`: it recalls previously-logged quant failure patterns from `rlm.harness` memory and returns a compact `{count, failures, prompt_block}` card whose `prompt_block` summarizes the known dead-ends (ordered by recurrence) so the next strategy idea can avoid repeating them, closing the fail-and-refine loop.
 - Added `windowsHide: true` to all long-lived detached child spawns (daemon, owned-session worker, daemon-update restart coordinator, GUI orchestrator, Python fork server, and ipykernel launcher) so no console window flashes on Windows when these start in the background.
 - Changed the root `server` script from `npx tsx` to `node --import tsx`, removing the `npx`/`.cmd` shim from the backend launch path (consistent with `gui:live`, which already spawns `node` directly with a resolved tsx bin).
 - Extracted the cross-platform default-browser launch into `src/utils/open-url.ts` (`open` / `rundll32 url.dll,FileProtocolHandler` / `xdg-open`, no shell) and used it in the login dialog; `preview-bridge.mjs` keeps a self-contained mirror of the same logic.

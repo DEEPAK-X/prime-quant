@@ -12,6 +12,9 @@ FX/CFD backtest & validation engine), exposed to the IPython kernel as
 - ``run_pipeline`` — full workflow: AST lint -> backtest -> CPCV + walk-forward
   validation gate -> conditional Optuna optimization -> HTML tearsheet on disk
 - ``refine_log_failure`` — durable failure-pattern memory for the /refine loop
+- ``recall_failures`` — read counterpart called before generation; returns the
+  previously-logged failure patterns so the next strategy idea avoids known
+  dead-ends, closing the fail-and-refine loop
 
 All heavy imports (``primequant``, ``polars``, ``numpy``) are lazy so this
 package imports in any venv; when the engine is missing, ``run_backtest``
@@ -31,7 +34,7 @@ from .idea_to_spec import (
     idea_to_spec,
     normalize_spec,
 )
-from .refine import refine_log_failure
+from .refine import refine_log_failure, recall_failures
 from .runner import (
     MAX_CARD_TOKENS,
     CardTooLargeError,
@@ -58,6 +61,7 @@ __all__ = [
     "fetch_data",
     "idea_to_spec",
     "normalize_spec",
+    "recall_failures",
     "refine_log_failure",
     "run_backtest",
     "run_pipeline",
