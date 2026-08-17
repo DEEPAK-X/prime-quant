@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChatEvent, ConnectionState, StepEvent } from "../lib/ws";
+import type { ChatMessage, ConnectionState, StepEvent } from "../lib/ws";
+import { useQuantStore } from "../lib/store";
 import { CodeBlock } from "./CodeBlock";
 import { PipelineStrip } from "./PipelineStrip";
-
-interface ChatPaneProps {
-	connection: ConnectionState;
-	messages: ChatEvent[];
-	steps: Record<string, StepEvent>;
-	sendMessage: (text: string) => void;
-}
 
 type MessageBlock =
 	| { kind: "text"; text: string }
@@ -35,7 +29,7 @@ function parseCodeBlocks(text: string): MessageBlock[] {
 	return blocks;
 }
 
-function ChatMessage({ message }: { message: ChatEvent }) {
+function ChatMessageView({ message }: { message: ChatMessage }) {
 	const blocks = useMemo(() => parseCodeBlocks(message.text), [message.text]);
 	const isUser = message.role === "user";
 	return (
@@ -44,6 +38,7 @@ function ChatMessage({ message }: { message: ChatEvent }) {
 				<span className={isUser ? "text-term-yellow" : "text-term-accent"}>
 					{isUser ? "[you]" : "[orchestrator]"}
 				</span>
+				{message.streaming ? <span className="ml-1 text-term-dim">streaming…</span> : null}
 			</div>
 			{blocks.map((block, index) =>
 				block.kind === "code" ? (
@@ -56,6 +51,13 @@ function ChatMessage({ message }: { message: ChatEvent }) {
 			)}
 		</div>
 	);
+}
+
+interface ChatPaneProps {
+	readonly connection: ConnectionState;
+	readonly messages: ChatMessage[];
+	readonly steps: Record<string, StepEvent>;
+	readonly sendMessage: (text: string) => void;
 }
 
 export function ChatPane({ connection, messages, steps, sendMessage }: ChatPaneProps) {
@@ -95,7 +97,7 @@ export function ChatPane({ connection, messages, steps, sendMessage }: ChatPaneP
 						</p>
 					</div>
 				) : (
-					messages.map((message, index) => <ChatMessage key={message.id ?? index} message={message} />)
+					messages.map((message, index) => <ChatMessageView key={message.id ?? index} message={message} />)
 				)}
 			</div>
 			<form
@@ -120,4 +122,10 @@ export function ChatPane({ connection, messages, steps, sendMessage }: ChatPaneP
 			</form>
 		</div>
 	);
+}
+
+/** Convenience wrapper that reads the store and renders ChatPane. */
+export function ChatPaneConnected() {
+	const { connection, messages, steps, sendMessage } = useQuantStore();
+	return <ChatPane connection={connection} messages={messages} steps={steps} sendMessage={sendMessage} />;
 }
