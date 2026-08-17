@@ -15625,13 +15625,13 @@ export const MODELS = {
 			thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max","max":null},
 			input: ["text"],
 			cost: {
-				input: 0.061459999999999994,
-				output: 0.12291999999999999,
-				cacheRead: 0.012292,
+				input: 0.063,
+				output: 0.126,
+				cacheRead: 0.0126,
 				cacheWrite: 0,
 			},
 			contextWindow: 1048576,
-			maxTokens: 384000,
+			maxTokens: 262144,
 		} satisfies Model<"openai-completions">,
 		"~google/gemini-flash-latest": {
 			id: "~google/gemini-flash-latest",
