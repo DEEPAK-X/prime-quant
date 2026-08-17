@@ -150,6 +150,14 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
 		usage: "config",
 		summary: "Configure package resources",
 	},
+	{
+		path: ["gui"],
+		usage: "gui [--no-open] [--port <port>]",
+		summary: "Launch the PrimeQuant web GUI (Vite + bridge)",
+		description:
+			"Starts the web GUI and its backend bridge as a supervised process tree and opens the default browser. Only available from a source checkout (packages/web-ui).",
+		options: ["--no-open   Do not open a browser", "--port <n>  GUI port (default 5173)"],
+	},
 ];
 
 export const PUBLIC_COMMAND_NAMES = new Set(

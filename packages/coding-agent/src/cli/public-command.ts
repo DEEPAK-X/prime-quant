@@ -15,6 +15,7 @@ import {
 import { handleDaemonCommand } from "./daemon-command.js";
 import { runPs, runReap, runShutdownAll } from "./daemon-ps.js";
 import { DAEMON_UPDATE_RESTART_COORDINATOR_FLAG } from "./daemon-update-restart.js";
+import { launchGui } from "./gui-launch.js";
 
 export interface PublicCommandResult {
 	handled: boolean;
@@ -140,6 +141,8 @@ async function runPublicCommand(args: string[]): Promise<PublicCommandResult> {
 		case "config":
 			if (!requireArgumentCount(args.slice(1), 0, "config")) return HANDLED;
 			return continueWith(args);
+		case "gui":
+			return runGui(args.slice(1));
 		default:
 			return continueWith(args);
 	}
@@ -262,6 +265,37 @@ async function runShutdown(args: string[]): Promise<PublicCommandResult> {
 	const options = parseBooleanOptions(args, new Set(["--force", "--json"]), "shutdown");
 	if (!options) return HANDLED;
 	await runShutdownAll(options.has("--json"), options.has("--force"));
+	return HANDLED;
+}
+
+async function runGui(args: string[]): Promise<PublicCommandResult> {
+	let open = true;
+	let port: string | undefined;
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (arg === "--no-open") {
+			open = false;
+		} else if (arg === "--port") {
+			const next = args[i + 1];
+			if (!next || next.startsWith("-")) {
+				return fail(
+					`Usage: ${APP_NAME} ${getCommandSpec(["gui"])?.usage ?? "gui"}`,
+					"--port requires a port number.",
+				);
+			}
+			port = next;
+			i++;
+		} else {
+			return fail(`Unknown option for gui: ${arg}`, `Run "${APP_NAME} help gui" for usage.`);
+		}
+	}
+	const { child, url } = launchGui({ open, port });
+	child.on("error", (error) => {
+		console.error(`${APP_NAME} gui failed: ${error.message}`);
+		process.exit(1);
+	});
+	// The orchestrator owns the process tree; keep this CLI alive until it exits.
+	console.log(`${APP_NAME} gui: ${url} (Ctrl+C to stop)`);
 	return HANDLED;
 }
 

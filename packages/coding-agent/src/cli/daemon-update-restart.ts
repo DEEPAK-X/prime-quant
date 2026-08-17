@@ -551,6 +551,7 @@ export async function launchDaemonUpdateRestartCoordinator(
 		cwd: options.cwd ?? process.cwd(),
 		detached: true,
 		env: coordinatorEnvironment(agentDir),
+		windowsHide: true,
 		stdio: "ignore",
 	});
 	let launchError: Error | undefined;

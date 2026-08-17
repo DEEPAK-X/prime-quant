@@ -138,6 +138,7 @@ const CANONICAL_BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "tree", description: "Navigate session tree (switch branches)" },
 	{ name: "login", description: "Configure provider authentication" },
 	{ name: "logout", description: "Remove provider authentication" },
+	{ name: "gui", description: "Launch the PrimeQuant web GUI in your browser" },
 	{
 		name: "mcp",
 		description: "Open MCP Connections or manage MCP integrations",

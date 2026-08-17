@@ -375,6 +375,8 @@ async function ensureDaemonRunning(socketPath: string, spawnCwd?: string): Promi
 			cwd: spawnCwd ?? process.cwd(),
 			detached: true,
 			env,
+			// No console window flashes on Windows for this detached daemon.
+			windowsHide: true,
 			// A pipe would tie the daemon's stderr to this short-lived CLI
 			// (EPIPE once it exits); crash details come from the daemon log,
 			// which the supervisor writes to before rethrowing startup errors.

@@ -16,7 +16,7 @@
 		"dev:tsc": "cd packages/ai && npm run dev:tsc",
 		"gui": "npm run dev --workspace web-ui",
 		"gui:live": "node packages/web-ui/server/preview-bridge.mjs",
-		"server": "npx tsx packages/web-ui-server/src/main.ts",
+		"server": "node --import tsx packages/web-ui-server/src/main.ts",
 		"server:demo": "node packages/web-ui/server/demo-backend.mjs",
 		"tui": "tsx packages/coding-agent/src/cli.ts",
 		"start": "tsx packages/coding-agent/src/cli.ts",

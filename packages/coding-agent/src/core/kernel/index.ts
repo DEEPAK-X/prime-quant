@@ -723,6 +723,7 @@ export class KernelManager {
 			const kernel = spawn(python, ["-m", "ipykernel_launcher", "-f", connection.path], {
 				cwd: this.options.cwd,
 				env: this.options.env ? { ...process.env, ...this.options.env } : process.env,
+				windowsHide: true,
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 			this.kernel = kernel;

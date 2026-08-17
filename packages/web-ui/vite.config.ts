@@ -2,7 +2,10 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const BACKEND = "http://localhost:3001";
+// Bind IPv4 explicitly: on Windows `localhost` often resolves to ::1 (IPv6)
+// first, while the bridge listens on 127.0.0.1 only, causing ECONNREFUSED on
+// the /api and /ws proxy. Dial the same IPv4 address the bridge binds.
+const BACKEND = "http://127.0.0.1:3001";
 
 // The GUI is a thin client: /api JSON endpoints and the /ws event stream are
 // both proxied to the PrimeQuant backend (daemon) on localhost:3001 in dev.
