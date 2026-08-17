@@ -855,6 +855,7 @@ export class AgentDaemon {
 			const child = spawn(launch.command, launch.args, {
 				cwd: this.options.defaultSessionConfig.cwd ?? process.cwd(),
 				detached: true,
+				windowsHide: true,
 				env: environment,
 				stdio: "ignore",
 			});

@@ -2182,6 +2182,7 @@ export class DaemonSupervisor {
 		const child: ChildProcess = spawn(launch.command, launch.args, {
 			cwd: createCommand.config?.cwd ?? process.cwd(),
 			detached: true,
+			windowsHide: true,
 			env: createCliSubprocessEnv({
 				...process.env,
 				...launchEnv,
@@ -2394,11 +2395,11 @@ export class DaemonSupervisor {
 			const client = new DaemonWorkerClient(worker.descriptor.socketPath);
 			try {
 				await client.connect(Math.min(500, Math.max(50, deadline - Date.now())));
-				await client.waitForHello(1000);
+				await client.waitForHello(Math.min(5000, Math.max(1000, deadline - Date.now())));
 				await client.authenticateWorker(
 					worker.descriptor.authenticationToken,
 					this.supervisorAuthenticationClaim(),
-					1000,
+					Math.min(5000, Math.max(1000, deadline - Date.now())),
 				);
 				await this.assertRecoveryAllowed();
 				client.onFrame((frame) => this.handleWorkerFrame(worker, frame));
@@ -5226,6 +5227,7 @@ export class DaemonSupervisor {
 			const replacement = spawn(launch.command, launch.args, {
 				cwd: this.defaultSessionConfig.cwd ?? process.cwd(),
 				detached: true,
+				windowsHide: true,
 				env: environment,
 				stdio: "ignore",
 			});

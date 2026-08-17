@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,27 @@ const mainCallIndex = installerSource.lastIndexOf(mainCall);
 const ansiPattern = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const syncEnd = "\x1b[?2026l";
 const failures = [];
+
+function resolveShCommand() {
+	if (process.platform !== "win32") {
+		return "sh";
+	}
+	const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+	const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+	const candidates = [
+		join(programFiles, "Git", "bin", "sh.exe"),
+		join(programFiles, "Git", "usr", "bin", "sh.exe"),
+		join(programFilesX86, "Git", "bin", "sh.exe"),
+		join(programFilesX86, "Git", "usr", "bin", "sh.exe"),
+		"sh",
+		"bash",
+	];
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) return candidate;
+	}
+	return "sh";
+}
+const shCmd = resolveShCommand();
 
 if (mainCallIndex === -1) {
 	console.error('Installer render check failed: could not find final main "$@" call.');
@@ -164,12 +185,12 @@ if (failures.length > 0) {
 console.log("Installer render check passed.");
 
 function runCase(name, initialCols, initialRows, resizedCols, resizedRows) {
-	const result = spawnSync("sh", [harnessPath, String(initialCols), String(initialRows), String(resizedCols), String(resizedRows)], {
+	const result = spawnSync(shCmd, [harnessPath, String(initialCols), String(initialRows), String(resizedCols), String(resizedRows)], {
 		detached: true,
 		encoding: "utf-8",
 	});
 	if (result.status !== 0) {
-		failures.push(`${name}: harness exited with ${result.status ?? "unknown"}\n${result.stderr}${result.stdout}`);
+		failures.push(`${name}: harness exited with ${result.status ?? "unknown"}\n${result.stderr || ""}${result.stdout || ""}${result.error ? `\n${result.error.message}` : ""}`);
 		return emptyParsedCase();
 	}
 

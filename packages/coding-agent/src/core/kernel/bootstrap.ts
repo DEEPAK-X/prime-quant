@@ -381,6 +381,7 @@ function run(command: string, args: string[], options: { stdio?: "ignore" | "inh
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
 			env: process.env,
+			windowsHide: true,
 			stdio: options.stdio ?? "ignore",
 		});
 		child.on("error", reject);

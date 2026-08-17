@@ -327,6 +327,7 @@ export class DaemonCatalogClient {
 		const child = spawn(launch.command, launch.args, {
 			cwd: process.cwd(),
 			env: createCliSubprocessEnv({ ...process.env, [DAEMON_CATALOG_ROLE_ENV]: "1" }),
+			windowsHide: true,
 			stdio: ["ignore", "ignore", "ignore", "ipc"],
 		});
 		this.child = child;
@@ -345,7 +346,7 @@ export class DaemonCatalogClient {
 				}
 				child.kill("SIGKILL");
 				rejectReady(error);
-			}, 5000);
+			}, 20_000);
 			const cleanup = () => {
 				clearTimeout(timeout);
 				child.off("message", onMessage);

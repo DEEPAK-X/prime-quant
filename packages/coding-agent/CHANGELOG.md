@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Fixed Windows console window flashing during Python kernel bootstrap and process start-time queries, and resolved daemon worker authentication timeouts.
+- Changed daemon catalog process startup timeout to 20 seconds to prevent premature timeouts during catalog initialization.
+
 - Added `rlm.quant.recall_failures(kind=None)`, the read counterpart to `refine_log_failure`: it recalls previously-logged quant failure patterns from `rlm.harness` memory and returns a compact `{count, failures, prompt_block}` card whose `prompt_block` summarizes the known dead-ends (ordered by recurrence) so the next strategy idea can avoid repeating them, closing the fail-and-refine loop.
 - Added `windowsHide: true` to all long-lived detached child spawns (daemon, owned-session worker, daemon-update restart coordinator, GUI orchestrator, Python fork server, and ipykernel launcher) so no console window flashes on Windows when these start in the background.
 - Changed the root `server` script from `npx tsx` to `node --import tsx`, removing the `npx`/`.cmd` shim from the backend launch path (consistent with `gui:live`, which already spawns `node` directly with a resolved tsx bin).
