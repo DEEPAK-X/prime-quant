@@ -102,6 +102,10 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		return ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
 	}
 
+	if (provider === "orcarouter") {
+		return ["ORCAROUTER_API_KEY", "ORCA_API_KEY"];
+	}
+
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
 		"azure-openai-responses": "AZURE_OPENAI_API_KEY",
@@ -113,6 +117,7 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		cerebras: "CEREBRAS_API_KEY",
 		xai: "XAI_API_KEY",
 		openrouter: "OPENROUTER_API_KEY",
+		orcarouter: "ORCAROUTER_API_KEY",
 		"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
 		zai: "ZAI_API_KEY",
 		mistral: "MISTRAL_API_KEY",

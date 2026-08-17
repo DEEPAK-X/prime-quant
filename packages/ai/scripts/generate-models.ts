@@ -868,6 +868,128 @@ async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 	}
 }
 
+const ORCA_ROUTER_BASE_URL = "https://api.orcarouter.ai/v1";
+
+interface OrcaRouterModelResponse {
+	id: string;
+	object?: string;
+	created?: number;
+	owned_by?: string;
+	context_length?: number;
+	max_tokens?: number;
+	pricing?: {
+		prompt?: number;
+		completion?: number;
+		input?: number;
+		output?: number;
+	};
+	supported_endpoint_types?: string[];
+}
+
+const ORCA_ROUTER_FEATURED_MODELS = new Set([
+	"orcarouter/free",
+	"orcarouter/auto",
+	"orcarouter/fusion",
+	"orcarouter/fusion-flash",
+	"orcarouter/fusion-mini",
+	"qwen/qwen3.8-27b-free",
+	"deepseek/deepseek-v4-flash-free",
+	"deepseek/deepseek-v4-pro-free",
+	"deepseek/deepseek-v4-pro-0813",
+	"google/gemini-2.5-flash",
+	"google/gemini-2.5-pro",
+	"anthropic/claude-sonnet-4.5",
+	"anthropic/claude-opus-4.7",
+	"openai/gpt-5.4",
+]);
+
+async function fetchOrcaRouterModels(): Promise<Model<"openai-completions">[]> {
+	const models: Model<"openai-completions">[] = [];
+	try {
+		console.log("Fetching models from Orca Router API...");
+		const response = await fetch(`${ORCA_ROUTER_BASE_URL}/models`, {
+			headers: {
+				"User-Agent": "prime-quant-generator",
+			},
+		});
+		if (response.ok) {
+			const data = (await response.json()) as { data?: OrcaRouterModelResponse[] };
+			const entries = Array.isArray(data?.data) ? data.data : [];
+			for (const entry of entries) {
+				const id = entry.id;
+				const lowerId = id.toLowerCase();
+				const isFree =
+					lowerId.includes("free") ||
+					(entry.pricing && (entry.pricing.prompt === 0 || entry.pricing.input === 0));
+				const isReasoning =
+					lowerId.includes("reason") ||
+					lowerId.includes("thinking") ||
+					lowerId.includes("r1") ||
+					lowerId.includes("fusion") ||
+					lowerId.includes("auto") ||
+					lowerId.includes("pro") ||
+					lowerId.includes("gemini");
+				const isVision =
+					lowerId.includes("vision") ||
+					lowerId.includes("vl") ||
+					lowerId.includes("image") ||
+					lowerId.includes("flash") ||
+					lowerId.includes("pro") ||
+					lowerId.includes("claude") ||
+					lowerId.includes("gpt");
+
+				const contextWindow =
+					entry.context_length ?? (lowerId.includes("deepseek") || lowerId.includes("gemini") ? 1048576 : 128000);
+				const maxTokens = entry.max_tokens ?? 8192;
+				const inputCost = entry.pricing?.prompt ?? entry.pricing?.input ?? 0;
+				const outputCost = entry.pricing?.completion ?? entry.pricing?.output ?? 0;
+
+				const nameParts = id.split("/");
+				const displayName =
+					nameParts.length > 1 ? `${nameParts[0]}: ${nameParts.slice(1).join("/")}` : id;
+
+				models.push({
+					id,
+					name: displayName,
+					api: "openai-completions",
+					provider: "orcarouter",
+					baseUrl: ORCA_ROUTER_BASE_URL,
+					reasoning: isReasoning,
+					input: isVision ? ["text", "image"] : ["text"],
+					cost: {
+						input: inputCost,
+						output: outputCost,
+						cacheRead: 0,
+						cacheWrite: 0,
+					},
+					contextWindow,
+					maxTokens,
+					...(ORCA_ROUTER_FEATURED_MODELS.has(id) || isFree ? { featured: true } : {}),
+				});
+			}
+		}
+	} catch (error) {
+		console.error("Failed to fetch Orca Router models:", error);
+	}
+	if (!models.some((m) => m.id === "orcarouter/auto")) {
+		models.push({
+			id: "orcarouter/auto",
+			name: "OrcaRouter: Auto",
+			api: "openai-completions",
+			provider: "orcarouter",
+			baseUrl: ORCA_ROUTER_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 32768,
+			featured: true,
+		});
+	}
+	console.log(`Loaded ${models.length} Orca Router models`);
+	return models;
+}
+
 async function loadModelsDevData(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from models.dev API...");
@@ -1579,9 +1701,10 @@ async function generateModels() {
 	const modelsDevModels = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
 	const aiGatewayModels = await fetchAiGatewayModels();
+	const orcaRouterModels = await fetchOrcaRouterModels();
 
 	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels].filter(
+	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels, ...orcaRouterModels].filter(
 		(model) =>
 			!((model.provider === "opencode" || model.provider === "opencode-go") && model.id === "gpt-5.3-codex-spark"),
 	);

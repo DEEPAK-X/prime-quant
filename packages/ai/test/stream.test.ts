@@ -729,7 +729,7 @@ describe("Generate E2E Tests", () => {
 	describe.skipIf(!hasCloudflareAiGatewayCredentials() || !process.env.ANTHROPIC_API_KEY)(
 		"Cloudflare AI Gateway → Anthropic BYOK (claude-sonnet-4-5 via /anthropic messages)",
 		() => {
-			const llm = getModel("cloudflare-ai-gateway", "claude-sonnet-4-5");
+			const llm = getModel("cloudflare-ai-gateway", "claude-sonnet-4.5");
 			const options = { headers: { Authorization: `Bearer ${process.env.ANTHROPIC_API_KEY}` } };
 			const thinkingOptions = {
 				...options,
@@ -810,6 +810,25 @@ describe("Generate E2E Tests", () => {
 			await handleImage(llm);
 		});
 	});
+
+	describe.skipIf(!process.env.ORCAROUTER_API_KEY)(
+		"Orca Router Provider (orcarouter/auto via OpenAI Completions)",
+		() => {
+			const llm = getModel("orcarouter", "orcarouter/auto");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+		},
+	);
 
 	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
 		"Vercel AI Gateway Provider (google/gemini-2.5-flash via Anthropic Messages)",
