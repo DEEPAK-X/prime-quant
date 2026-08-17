@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added an animated startup progress indicator for interactive CLI launches to provide real-time feedback during initialization.
 - Fixed Windows session lease directory creation and stale lease reclamation EPERM/EACCES handling.
 - Fixed Windows supervisor ownership liveness checks and named pipe socket file cleanup during daemon startup and shutdown.
 - Added Orca Router provider support, default model resolution, and login display name.

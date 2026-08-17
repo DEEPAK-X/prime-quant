@@ -33,6 +33,7 @@ import {
 	SessionSelectorError,
 	SessionSelectorNotFoundError,
 } from "./cli/session-resolver.js";
+import { stopStartupProgress, updateStartupProgress } from "./cli/startup-progress.js";
 import { APP_NAME, expandTildePath, getAgentDir, getSessionDirEnvOverride, VERSION } from "./config.js";
 import {
 	type AgentExecutionMode,
@@ -1076,6 +1077,9 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("parseArgs");
 	const appMode = resolveAppMode(parsed, process.stdin.isTTY);
+	if (appMode !== "interactive") {
+		stopStartupProgress();
+	}
 
 	if (shouldRejectNonInteractiveAttach(publicCommand.attachAgent, appMode)) {
 		console.error(chalk.red("Error: attach requires an interactive terminal"));
@@ -1132,6 +1136,7 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 	}
 
+	updateStartupProgress("Checking configuration and migrations...");
 	// Run migrations (pass cwd for project-local migrations)
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(cwd);
 	time("runMigrations");
@@ -1166,6 +1171,7 @@ export async function main(args: string[], options?: MainOptions) {
 		getSessionDirEnvOverride() ??
 		startupSettingsManager.getSessionDir();
 	const daemonSocketPath = parsed.daemonSocket ?? defaultDaemonSocketPath();
+	updateStartupProgress("Connecting to daemon supervisor...");
 	// Kick off daemon spawn/readiness immediately so it overlaps session-manager
 	// and runtime-services preparation; attach only connects to an existing daemon.
 	let daemonReady = shouldEnsureInteractiveDaemonForStartup(useDaemonClient, publicCommand.attachAgent)
@@ -1181,6 +1187,7 @@ export async function main(args: string[], options?: MainOptions) {
 		explicitAttach: publicCommand.attachAgent !== undefined,
 	});
 	if (shouldLookupDaemonActiveSession && daemonReady) {
+		updateStartupProgress("Waiting for daemon readiness...");
 		daemonReady = (await awaitDaemonReady(daemonReady)).ready;
 	}
 	let activeDaemonSessionSummary: SessionSummary | undefined;
@@ -1335,6 +1342,7 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 	if (useDaemonInteractive) {
+		updateStartupProgress("Loading settings, models, and extensions...");
 		const prepared = await prepareRuntimeServices({
 			config: defaultSessionConfig,
 			cwd: sessionManager.getCwd(),
@@ -1432,14 +1440,19 @@ export async function main(args: string[], options?: MainOptions) {
 				fork: parsed.fork,
 			})
 		) {
+			updateStartupProgress("Waiting for daemon readiness...");
 			daemonReady = (await awaitDaemonReady(daemonReady)).ready;
+			updateStartupProgress("Preloading syntax highlighters...");
 			await preloadCodeHighlighter();
 			printTimings();
+			stopStartupProgress();
 			await launchAgentsView();
 			return;
 		}
 
+		updateStartupProgress("Waiting for daemon readiness...");
 		daemonReady = (await awaitDaemonReady(daemonReady)).ready;
+		updateStartupProgress("Establishing session...");
 		// A fresh default chat opens a real but message-less session; the lifecycle
 		// axis treats it as a draft (hidden, discarded on detach if never used), so
 		// no DeferredAgentConnection is needed to avoid creating it up front.
@@ -1486,8 +1499,10 @@ export async function main(args: string[], options?: MainOptions) {
 			sessionHasChildren: summary.hasRunningRlmChildren === true,
 		});
 
+		updateStartupProgress("Preloading syntax highlighters...");
 		await preloadCodeHighlighter();
 		printTimings();
+		stopStartupProgress();
 		const interactiveResult = await interactiveMode.run();
 		if (parsed.noSession) {
 			return;
@@ -1683,8 +1698,10 @@ export async function main(args: string[], options?: MainOptions) {
 			return;
 		}
 
+		updateStartupProgress("Preloading syntax highlighters...");
 		await preloadCodeHighlighter();
 		printTimings();
+		stopStartupProgress();
 		await interactiveMode.run();
 	} else {
 		printTimings();

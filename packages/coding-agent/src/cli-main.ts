@@ -6,6 +6,7 @@ import {
 	isOwnedSessionWorkerProcess,
 	maybeRunOwnedSessionWorkerFrontend,
 } from "./cli/owned-session-worker.js";
+import { startStartupProgress, stopStartupProgress } from "./cli/startup-progress.js";
 import { APP_NAME } from "./config.js";
 
 export async function runCli(): Promise<void> {
@@ -25,6 +26,7 @@ export async function runCli(): Promise<void> {
 	const handledByOwnedWorker = await maybeRunOwnedSessionWorkerFrontend(args);
 	if (!handledByOwnedWorker) {
 		if (!isOwnedSessionWorkerProcess()) {
+			startStartupProgress("Starting up...", args);
 			// Boot a cold daemon concurrently with this process's heavy imports.
 			maybeStartDaemonEarly(process.argv.slice(2));
 		}
@@ -40,6 +42,7 @@ export async function runCli(): Promise<void> {
 		try {
 			await main(process.argv.slice(2));
 		} finally {
+			stopStartupProgress();
 			closeOwnedSessionWorkerOwnerWatch();
 		}
 	}
