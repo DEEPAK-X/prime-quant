@@ -82,6 +82,7 @@ export function launchGui(options: LaunchGuiOptions = {}): LaunchGuiResult {
 			...process.env,
 			PORT: port,
 		},
+		windowsHide: true,
 	});
 	if (detached) child.unref();
 
