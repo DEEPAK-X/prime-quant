@@ -2196,6 +2196,7 @@ export class DaemonSupervisor {
 				[SESSION_LEASE_OWNER_ID_ENV]: rootActiveSessionId,
 			}),
 			stdio: ["ignore", "ignore", "pipe", "pipe"],
+			windowsHide: true,
 		});
 		const detachWorkerStderr = child.stderr
 			? attachJsonlLineReader(child.stderr, (line) => this.log(`Session worker ${workerId} stderr: ${line}`), {
@@ -2474,7 +2475,18 @@ export class DaemonSupervisor {
 		}
 		try {
 			if (!isProcessAlive(worker.descriptor.pid)) {
-				throw new Error("Session worker process is no longer running");
+				// A dead persisted worker must not block supervisor readiness: full
+				// recovery (respawn attempts with backoff) can take well past the
+				// client startup timeout. Mark it recovering, persist, and kick off
+				// recovery in the background so markReady() happens in seconds.
+				if (this.isWorkerRecoveryEligible(worker)) {
+					worker.descriptor.lifecycle = "recovering";
+					worker.descriptor.lastError = "Session worker process is no longer running";
+					this.persistWorker(worker);
+					void this.syncAgentPeers().catch(() => undefined);
+					void this.recoverWorker(worker);
+				}
+				return;
 			}
 			const observedProcessStartId = getProcessStartId(worker.descriptor.pid);
 			await this.connectWorker(worker, 2000);
@@ -2493,7 +2505,16 @@ export class DaemonSupervisor {
 				return;
 			}
 			this.log(`Could not adopt worker ${worker.descriptor.workerId}: ${String(error)}`);
-			await this.recoverWorker(worker);
+			// Adoption failures must not fail startup. Recover in the background
+			// (recoverWorker memoizes via worker.recovery; the eligibility guards
+			// prevent double-recovery) so readiness is not delayed.
+			if (this.isWorkerRecoveryEligible(worker)) {
+				worker.descriptor.lifecycle = "recovering";
+				worker.descriptor.lastError = error instanceof Error ? error.message : String(error);
+				this.persistWorker(worker);
+				void this.syncAgentPeers().catch(() => undefined);
+				void this.recoverWorker(worker);
+			}
 		}
 	}
 
@@ -5228,6 +5249,7 @@ export class DaemonSupervisor {
 				detached: true,
 				env: environment,
 				stdio: "ignore",
+				windowsHide: true,
 			});
 			replacement.unref();
 		}

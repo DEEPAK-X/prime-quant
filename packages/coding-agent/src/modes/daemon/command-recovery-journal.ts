@@ -206,9 +206,14 @@ export class CommandRecoveryJournal {
 			closeSync(descriptor);
 		}
 		renameSync(tempPath, this.path);
+		// Best-effort directory fsync: directory file descriptors cannot be
+		// fsynced on Windows (EPERM) and fsync of directories is unsupported on
+		// some filesystems. The file fsync above is what matters for durability.
 		const directoryDescriptor = openSync(dirname(this.path), "r");
 		try {
 			fsyncSync(directoryDescriptor);
+		} catch {
+			// Unsupported on this platform/filesystem; ignore.
 		} finally {
 			closeSync(directoryDescriptor);
 		}

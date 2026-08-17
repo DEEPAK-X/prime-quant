@@ -3,15 +3,37 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { lockSync } from "proper-lockfile";
-import { afterEach, describe, expect, it } from "vitest";
-import {
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Allow the candidate-directory rename (renameSync onto an existing lease
+// directory) to be made to raise EPERM, as it does on Windows. Only the first
+// rename is intercepted so the subsequent stale-reclaim rename still succeeds.
+let simulateRenameEpermOnce = false;
+
+vi.mock("node:fs", async (importActual) => {
+	const actual = await importActual<typeof import("node:fs")>();
+	return {
+		...actual,
+		renameSync: vi.fn((...args: Parameters<typeof actual.renameSync>) => {
+			if (simulateRenameEpermOnce) {
+				simulateRenameEpermOnce = false;
+				const error: NodeJS.ErrnoException = new Error("EPERM: operation not permitted, rename");
+				error.code = "EPERM";
+				throw error;
+			}
+			return actual.renameSync(...args);
+		}),
+	};
+});
+
+const {
 	acquireSessionLease,
 	canonicalSessionPath,
 	getWindowsProcessStartId,
 	SESSION_LEASE_OWNER_ID_ENV,
 	SESSION_LEASES_ENABLED_ENV,
 	SessionAlreadyActiveError,
-} from "../src/core/session-lease.js";
+} = await import("../src/core/session-lease.js");
 
 const tempDirs: string[] = [];
 
@@ -114,6 +136,34 @@ describe("session leases", () => {
 		const lease = acquireSessionLease(sessionPath, agentDir, enabledEnvironment("replacement"));
 		expect(lease?.sessionPath).toBe(sessionPath);
 		lease?.release();
+	});
+
+	it("reclaims a stale lease when rename-over-existing raises EPERM", () => {
+		const agentDir = createTempDir();
+		const sessionPath = canonicalSessionPath(resolve(agentDir, "eperm.jsonl"));
+		const key = createHash("sha256").update(sessionPath).digest("hex");
+		const lockDirectory = join(agentDir, "session-leases", `${key}.lock`);
+		mkdirSync(lockDirectory, { recursive: true });
+		writeFileSync(
+			join(lockDirectory, "owner.json"),
+			JSON.stringify({
+				version: 1,
+				token: "stale",
+				pid: 2_147_483_647,
+				activeSessionId: "dead-owner",
+				sessionPath,
+				createdAt: new Date(0).toISOString(),
+			}),
+		);
+
+		simulateRenameEpermOnce = true;
+		try {
+			const lease = acquireSessionLease(sessionPath, agentDir, enabledEnvironment("replacement"));
+			expect(lease?.sessionPath).toBe(sessionPath);
+			lease?.release();
+		} finally {
+			simulateRenameEpermOnce = false;
+		}
 	});
 
 	it("reports guard contention as a coordination failure", () => {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Added `windowsHide: true` to all daemon, worker, and helper process spawns (supervisor, worker relaunch, replacement supervisor, daemon launch, update restart, taskkill, powershell queries, kernel venv bootstrap) so detached processes no longer flash console windows on Windows.
+- Changed the daemon supervisor to stop blocking readiness on dead persisted worker recovery; dead workers are marked recovering and respawned in the background so `daemon_hello` arrives in seconds instead of timing out the 30s client startup window.
+- Fixed session lease reclaim failing on Windows because `renameSync` onto an existing lease directory raises `EPERM`, which is now treated like `EEXIST`/`ENOTEMPTY` and falls through to the stale-owner liveness check.
+- Fixed recovery journal compaction failing on Windows because directory-handle `fsyncSync` raises `EPERM`; directory fsync is now best-effort and tolerated when unsupported.
 - Fixed kernel venv bootstrap on Windows by using `Scripts\python.exe` instead of the Unix `bin/python` path; the venv, IPython kernel, and all quant skills now bootstrap and run on Windows without manual `PRIME_AGENT_KERNEL_PYTHON` overrides.
 - Added automatic installation of the repo-local `prime-quant` engine (polars, numpy, optuna) and the `MetaTrader5` IPC binding into the kernel venv when the engine directory is detected; engine source changes invalidate the venv and trigger a rebuild.
 - Added `rlm.quant.fetch_data(symbol, timeframe, bars)` to pull live OHLCV bars from the local MetaTrader 5 terminal, run QA checks, bind the frame to kernel scope as `df` / `_last_df`, and return only a compact card; supports `PRIME_QUANT_MT5_*` env overrides for non-default terminals.

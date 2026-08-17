@@ -116,6 +116,7 @@ function runProcessQuery(command: string, args: string[]): string {
 	return execFileSync(command, args, {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "ignore"],
+		windowsHide: true,
 	});
 }
 
@@ -265,7 +266,10 @@ export function acquireSessionLease(
 			} catch (error) {
 				rmSync(candidateDirectory, { recursive: true, force: true });
 				const code = (error as NodeJS.ErrnoException).code;
-				if (code !== "EEXIST" && code !== "ENOTEMPTY") {
+				// On Windows, renaming onto an existing directory can raise EPERM
+				// (rather than EEXIST/ENOTEMPTY). Treat it as a collision and fall
+				// through to the stale-owner liveness check / reclaim path below.
+				if (code !== "EEXIST" && code !== "ENOTEMPTY" && code !== "EPERM") {
 					throw error;
 				}
 				const existingOwner = readLeaseOwner(directory);

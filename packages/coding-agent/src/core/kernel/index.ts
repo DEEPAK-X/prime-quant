@@ -724,6 +724,7 @@ export class KernelManager {
 				cwd: this.options.cwd,
 				env: this.options.env ? { ...process.env, ...this.options.env } : process.env,
 				stdio: ["ignore", "pipe", "pipe"],
+				windowsHide: true,
 			});
 			this.kernel = kernel;
 

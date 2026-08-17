@@ -1,8 +1,38 @@
 import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { CommandRecoveryJournal } from "../src/modes/daemon/command-recovery-journal.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Track file descriptors opened in read mode on a directory so the directory
+// fsync in compact() can be made to fail without affecting the file fsync.
+const directoryReadFds = new Set<number>();
+let simulateDirectoryFsyncEperm = false;
+
+vi.mock("node:fs", async (importActual) => {
+	const actual = await importActual<typeof import("node:fs")>();
+	return {
+		...actual,
+		openSync: vi.fn((...args: Parameters<typeof actual.openSync>) => {
+			const fd = actual.openSync(...args);
+			const [path, mode] = args;
+			if (mode === "r" && typeof path === "string" && !path.endsWith(".tmp")) {
+				directoryReadFds.add(fd);
+			}
+			return fd;
+		}),
+		fsyncSync: vi.fn((fd: number) => {
+			if (simulateDirectoryFsyncEperm && directoryReadFds.has(fd)) {
+				const error: NodeJS.ErrnoException = new Error("EPERM: operation not permitted, fsync");
+				error.code = "EPERM";
+				throw error;
+			}
+			return actual.fsyncSync(fd);
+		}),
+	};
+});
+
+const { CommandRecoveryJournal } = await import("../src/modes/daemon/command-recovery-journal.js");
+const nodeFs = await import("node:fs");
 
 describe("CommandRecoveryJournal", () => {
 	const roots: string[] = [];
@@ -83,6 +113,39 @@ describe("CommandRecoveryJournal", () => {
 		});
 		journal.acknowledge("client-a", "command-a");
 
+		const restored = new CommandRecoveryJournal(path);
+		expect(restored.begin("client-a", "command-a", "prompt")).toEqual({ status: "new" });
+	});
+
+	it("tolerates a directory fsync that raises EPERM during compaction", () => {
+		directoryReadFds.clear();
+		simulateDirectoryFsyncEperm = false;
+		const fsyncSpy = vi.mocked(nodeFs.fsyncSync);
+
+		const path = createPath();
+		const journal = new CommandRecoveryJournal(path);
+		journal.begin("client-a", "command-a", "prompt");
+		journal.recordResult("client-a", "command-a", {
+			id: "command-a",
+			type: "response",
+			command: "prompt",
+			success: true,
+		});
+
+		// Acknowledging the last entry drains the journal and triggers compaction.
+		// Enable the EPERM simulation only for the compaction triggered by
+		// acknowledge; the preceding appends' file fsyncs must keep succeeding.
+		directoryReadFds.clear();
+		simulateDirectoryFsyncEperm = true;
+		try {
+			expect(() => journal.acknowledge("client-a", "command-a")).not.toThrow();
+		} finally {
+			simulateDirectoryFsyncEperm = false;
+		}
+		expect(fsyncSpy.mock.calls.length).toBeGreaterThan(0);
+		expect(directoryReadFds.size).toBeGreaterThan(0);
+
+		// The compacted journal is reloadable and treats the command as new.
 		const restored = new CommandRecoveryJournal(path);
 		expect(restored.begin("client-a", "command-a", "prompt")).toEqual({ status: "new" });
 	});

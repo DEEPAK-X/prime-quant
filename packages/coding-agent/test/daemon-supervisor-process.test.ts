@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -965,6 +965,119 @@ describe("daemon supervisor resident workers", () => {
 			await waitForProcessGone(resumedSummary.workerPid);
 			workerPids.delete(resumedSummary.workerPid);
 		}
+	});
+
+	it("does not delay supervisor readiness on dead-worker recovery", { timeout: 60_000 }, async () => {
+		const root = tempDir();
+		const agentDir = join(root, "agent");
+		const projectDir = join(root, "project");
+		const missingCwd = join(root, "removed-project");
+		const sessionDir = join(agentDir, "sessions");
+		const socketPath = join(tmpdir(), `prime-supervisor-dead-worker-${process.pid}-${randomUUID().slice(0, 8)}.sock`);
+		mkdirSync(projectDir, { recursive: true });
+		const sessionManager = SessionManager.create(projectDir, sessionDir);
+		sessionManager.appendMessage({ role: "user", content: "survive a dead worker", timestamp: 1 });
+		const sessionFile = sessionManager.getSessionFile();
+		if (!sessionFile) {
+			throw new Error("Fixture session did not persist");
+		}
+
+		// Pre-seed a persisted worker descriptor whose pid is dead (a pid that
+		// cannot be alive) and whose create command points at a cwd that does not
+		// exist, so recovery respawns fail and run through the full
+		// [250, 1000, 5000]ms backoff before marking the worker failed. This is
+		// the Windows startup scenario: a persisted dead worker would otherwise
+		// block markReady() until recovery completed.
+		const descriptorKey = createHash("sha256").update(socketPath).digest("hex").slice(0, 12);
+		const descriptorDir = join(agentDir, "daemon-workers", descriptorKey);
+		mkdirSync(descriptorDir, { recursive: true, mode: 0o700 });
+		const workerId = randomUUID().replace(/-/g, "").slice(0, 12);
+		const now = new Date().toISOString();
+		// Shape mirrors a persisted DaemonWorkerDescriptor (see
+		// isDaemonWorkerDescriptor). The pid is deliberately dead and the create
+		// command's cwd is missing so recovery respawns fail and run through the
+		// full [250, 1000, 5000]ms backoff before marking the worker failed.
+		const seededDescriptor = {
+			version: 1,
+			workerId,
+			pid: 2_147_483_647,
+			socketPath: join(tmpdir(), `prime-seeded-worker-${workerId}.sock`),
+			recoveryJournalPath: join(descriptorDir, `${workerId}.recovery.jsonl`),
+			supervisorSocketPath: socketPath,
+			authenticationToken: "seeded-token",
+			rootActiveSessionId: "seeded-root",
+			rootSessionId: "seeded-root",
+			sessionFile,
+			createdAt: now,
+			updatedAt: now,
+			lifecycle: "ready",
+			consecutiveFailures: 0,
+			createCommand: {
+				type: "create",
+				sessionPath: sessionFile,
+				config: {
+					cwd: missingCwd,
+					agentDir,
+					sessionDir,
+					noTools: true,
+					noExtensions: true,
+					serializedRefine: false,
+					telemetryDisabled: true,
+				},
+				continueRecent: false,
+			},
+		} as const;
+		writeFileSync(join(descriptorDir, `${workerId}.json`), `${JSON.stringify(seededDescriptor, null, 2)}\n`);
+
+		// Start the supervisor. Readiness (daemon_hello) must arrive without
+		// waiting for the dead worker's recovery backoff to complete.
+		const startedAt = Date.now();
+		const supervisor = spawnSupervisor(agentDir, socketPath, root);
+		const client = await connectEventually(socketPath, supervisor);
+		const readinessElapsed = Date.now() - startedAt;
+		// The full recovery backoff is 250 + 1000 + 5000 = 6250ms before the
+		// worker is marked failed. If readiness blocked on recovery it could not
+		// arrive inside this bound, so 5s cleanly separates blocking from
+		// non-blocking readiness.
+		expect(readinessElapsed).toBeLessThan(5_000);
+
+		// Readiness must have arrived BEFORE recovery completed: the persisted
+		// dead worker is still "recovering" the instant hello is received. With
+		// the old blocking path, markReady could not fire until recovery finished
+		// (descriptor already "failed"), so this assertion is the real guard.
+		const descriptorAtReady = readWorkerDescriptor(agentDir);
+		expect(descriptorAtReady.lifecycle).toBe("recovering");
+
+		// Recovery continues in the background and must eventually mark the
+		// worker failed (respawn cannot succeed without its cwd).
+		const recoveryDeadline = Date.now() + 30_000;
+		let descriptor: DaemonWorkerDescriptor | undefined;
+		while (Date.now() < recoveryDeadline) {
+			try {
+				descriptor = readWorkerDescriptor(agentDir);
+				if (descriptor.lifecycle === "failed") {
+					break;
+				}
+			} catch {
+				// Descriptor directory may still be settling.
+			}
+			await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+		}
+		expect(descriptor?.lifecycle).toBe("failed");
+
+		// Tear down: request shutdown, then fall back to signalling the
+		// supervisor directly if it lingers (recovery may leave it busy).
+		try {
+			await client.request({ type: "shutdown" }, 5000);
+		} catch {
+			// Supervisor may already be tearing down.
+		}
+		client.close();
+		if (supervisor.exitCode === null && supervisor.signalCode === null) {
+			supervisor.kill("SIGTERM");
+		}
+		await waitForExit(supervisor);
+		children.delete(supervisor);
 	});
 
 	it("does not resurrect an intentionally stopped root when the supervisor dies during kill", {

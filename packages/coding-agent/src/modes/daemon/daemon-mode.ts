@@ -824,6 +824,7 @@ export class AgentDaemon {
 				detached: true,
 				env: environment,
 				stdio: "ignore",
+				windowsHide: true,
 			});
 			child.unref();
 			const deadline = Date.now() + 10_000;
