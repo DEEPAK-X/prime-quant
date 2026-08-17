@@ -813,7 +813,11 @@ export class AgentDaemon {
 				} catch (error) {
 					rmSync(candidateDirectory, { recursive: true, force: true });
 					const code = (error as NodeJS.ErrnoException).code;
-					if (code !== "EEXIST" && code !== "ENOTEMPTY") {
+					const isTargetAlreadyExistsError =
+						code === "EEXIST" ||
+						code === "ENOTEMPTY" ||
+						(process.platform === "win32" && (code === "EPERM" || code === "EACCES"));
+					if (!isTargetAlreadyExistsError) {
 						throw error;
 					}
 					let ownerPid: number | undefined;

@@ -220,14 +220,19 @@ function reclaimStaleLease(directory: string): boolean {
 	const stalePath = `${directory}.stale-${process.pid}-${randomUUID()}`;
 	try {
 		renameSync(directory, stalePath);
+		rmSync(stalePath, { recursive: true, force: true });
+		return true;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 			return true;
 		}
-		return false;
+		try {
+			rmSync(directory, { recursive: true, force: true });
+			return !existsSync(directory);
+		} catch {
+			return false;
+		}
 	}
-	rmSync(stalePath, { recursive: true, force: true });
-	return true;
 }
 
 export function acquireSessionLease(
@@ -266,7 +271,11 @@ export function acquireSessionLease(
 			} catch (error) {
 				rmSync(candidateDirectory, { recursive: true, force: true });
 				const code = (error as NodeJS.ErrnoException).code;
-				if (code !== "EEXIST" && code !== "ENOTEMPTY") {
+				const isTargetAlreadyExistsError =
+					code === "EEXIST" ||
+					code === "ENOTEMPTY" ||
+					(process.platform === "win32" && (code === "EPERM" || code === "EACCES"));
+				if (!isTargetAlreadyExistsError) {
 					throw error;
 				}
 				const existingOwner = readLeaseOwner(directory);
