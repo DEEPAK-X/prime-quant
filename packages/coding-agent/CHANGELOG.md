@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added `rlm.quant.recall_failures(kind=None)`, the read counterpart to `refine_log_failure`: it recalls previously-logged quant failure patterns from `rlm.harness` memory and returns a compact `{count, failures, prompt_block}` card whose `prompt_block` summarizes the known dead-ends (ordered by recurrence) so the next strategy idea can avoid repeating them, closing the fail-and-refine loop.
+
 - Fixed kernel venv bootstrap on Windows by using `Scripts\python.exe` instead of the Unix `bin/python` path; the venv, IPython kernel, and all quant skills now bootstrap and run on Windows without manual `PRIME_AGENT_KERNEL_PYTHON` overrides.
 - Added automatic installation of the repo-local `prime-quant` engine (polars, numpy, optuna) and the `MetaTrader5` IPC binding into the kernel venv when the engine directory is detected; engine source changes invalidate the venv and trigger a rebuild.
 - Added `rlm.quant.fetch_data(symbol, timeframe, bars)` to pull live OHLCV bars from the local MetaTrader 5 terminal, run QA checks, bind the frame to kernel scope as `df` / `_last_df`, and return only a compact card; supports `PRIME_QUANT_MT5_*` env overrides for non-default terminals.

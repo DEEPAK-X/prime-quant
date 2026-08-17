@@ -453,6 +453,71 @@ class TestRefine:
         with pytest.raises(RuntimeError, match="Local harness state requires"):
             refine_mod.refine_log_failure("boom")
 
+    def test_recall_returns_logged_failures(self) -> None:
+        state = HarnessState(in_memory=True)
+        refine_mod.refine_log_failure(
+            {"kind": "validation_gate", "pattern": "PBO 0.41 exceeds the 0.25 overfit gate"},
+            harness=state,
+        )
+        refine_mod.refine_log_failure(
+            {"kind": "ast_lint", "pattern": "future-shift: df.shift(-1) used for entry"},
+            harness=state,
+        )
+
+        result = refine_mod.recall_failures(harness=state)
+        assert result["status"] == "recalled"
+        assert result["count"] == 2
+        kinds = {item["kind"] for item in result["failures"]}
+        assert kinds == {"validation_gate", "ast_lint"}
+        for item in result["failures"]:
+            assert item["pattern"]
+            assert item["version"] >= 1
+
+    def test_recall_empty_returns_zero(self) -> None:
+        state = HarnessState(in_memory=True)
+        result = refine_mod.recall_failures(harness=state)
+        assert result["status"] == "recalled"
+        assert result["count"] == 0
+        assert result["failures"] == []
+        assert result["prompt_block"] == ""
+
+    def test_recall_filters_by_kind(self) -> None:
+        state = HarnessState(in_memory=True)
+        refine_mod.refine_log_failure({"kind": "ast_lint", "pattern": "future-shift"}, harness=state)
+        refine_mod.refine_log_failure(
+            {"kind": "validation_gate", "pattern": "PBO 0.41"}, harness=state
+        )
+        only_ast = refine_mod.recall_failures(kind="ast_lint", harness=state)
+        assert only_ast["count"] == 1
+        assert only_ast["failures"][0]["kind"] == "ast_lint"
+
+    def test_recall_prompt_block_lists_failures(self) -> None:
+        state = HarnessState(in_memory=True)
+        refine_mod.refine_log_failure({"kind": "ast_lint", "pattern": "future-shift"}, harness=state)
+        result = refine_mod.recall_failures(harness=state)
+        assert "Known failure patterns" in result["prompt_block"]
+        assert "future-shift" in result["prompt_block"]
+
+    def test_recall_orders_by_recurrence(self) -> None:
+        state = HarnessState(in_memory=True)
+        pattern = "PBO 0.41 exceeds the 0.25 overfit gate"
+        # log the same validation_gate failure three times -> version 3
+        for _ in range(3):
+            refine_mod.refine_log_failure({"kind": "validation_gate", "pattern": pattern}, harness=state)
+        refine_mod.refine_log_failure({"kind": "ast_lint", "pattern": "future-shift"}, harness=state)
+
+        result = refine_mod.recall_failures(harness=state)
+        # the recurring (version 3) failure sorts first
+        assert result["failures"][0]["version"] == 3
+        assert "recurring x3" in result["prompt_block"]
+
+    def test_recall_limit_caps_results(self) -> None:
+        state = HarnessState(in_memory=True)
+        refine_mod.refine_log_failure({"kind": "ast_lint", "pattern": "future-shift"}, harness=state)
+        refine_mod.refine_log_failure({"kind": "ast_lint", "pattern": "split-leakage"}, harness=state)
+        result = refine_mod.recall_failures(harness=state, limit=1)
+        assert result["count"] == 1
+
 
 # ---------------------------------------------------------------------------
 # module API surface
@@ -467,6 +532,7 @@ class TestQuantModule:
             "run_pipeline",
             "validate",
             "refine_log_failure",
+            "recall_failures",
             "assumptions",
             "normalize_spec",
         ):
