@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fixed Windows supervisor ownership liveness checks and named pipe socket file cleanup during daemon startup and shutdown.
 - Added Orca Router provider support, default model resolution, and login display name.
 - Fixed directory fsync EPERM errors in command recovery journal and supervisor launch lock directory creation on Windows.
 - Fixed Windows console window flashing during Python kernel bootstrap and process start-time queries, and resolved daemon worker authentication timeouts.

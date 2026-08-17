@@ -526,7 +526,7 @@ function isProcessIdentityAlive(identity: ProcessIdentity): boolean {
 		return true;
 	}
 	const observed = getProcessStartId(identity.pid);
-	return observed === undefined || observed === identity.processStartId;
+	return observed === identity.processStartId;
 }
 
 function matchesExactProcessIdentity(identity: ProcessIdentity): boolean {

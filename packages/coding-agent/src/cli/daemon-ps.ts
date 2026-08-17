@@ -1170,6 +1170,9 @@ async function reapReachableDaemon(socketPath: string, pid: number | undefined):
 }
 
 function removeSocketFile(socketPath: string): boolean {
+	if (process.platform === "win32" && socketPath.startsWith("\\\\.\\pipe\\")) {
+		return true;
+	}
 	try {
 		if (existsSync(socketPath)) {
 			unlinkSync(socketPath);

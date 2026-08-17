@@ -183,7 +183,7 @@ function isLeaseOwnerAlive(owner: SessionLeaseOwner): boolean {
 		return true;
 	}
 	const currentStartId = getProcessStartId(owner.pid);
-	return currentStartId === undefined || currentStartId === owner.processStartId;
+	return currentStartId === owner.processStartId;
 }
 
 function withLeaseGuard<T>(directory: string, action: () => T): T {

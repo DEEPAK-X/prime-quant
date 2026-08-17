@@ -24,7 +24,7 @@ import {
 	DAEMON_WORKER_TOKEN_ENV,
 } from "../modes/daemon/daemon-worker-protocol.js";
 import { isHelpCommandRequest, PUBLIC_COMMAND_NAMES, REMOVED_COMMAND_NAMES } from "./command-registry.js";
-import { createCliSubprocessEnv, formatCurrentCliCommand } from "./subprocess-launch.js";
+import { createCliSubprocessEnv, createCliSubprocessLaunchSpec, formatCurrentCliCommand } from "./subprocess-launch.js";
 
 const DAEMON_STARTUP_TIMEOUT_MS = 30_000;
 const DAEMON_STARTUP_LOG_TAIL_BYTES = 4 * 1024;
@@ -352,11 +352,6 @@ async function ensureDaemonRunning(socketPath: string, spawnCwd?: string): Promi
 		throw new Error("Cannot determine current CLI entrypoint for daemon launch");
 	}
 
-	// Strip inherited daemon worker/supervisor role env vars so the spawned
-	// daemon supervisor does not inherit worker-mode behavior. Without this,
-	// a CLI running inside a daemon worker (e.g. a test spawned by the Prime
-	// Agent daemon) would launch the supervisor in worker mode, which listens
-	// on the socket but never sends the daemon_hello handshake.
 	const env = createCliSubprocessEnv();
 	delete env[DAEMON_WORKER_ROLE_ENV];
 	delete env[DAEMON_WORKER_TOKEN_ENV];
@@ -367,22 +362,19 @@ async function ensureDaemonRunning(socketPath: string, spawnCwd?: string): Promi
 	delete env[SESSION_LEASES_ENABLED_ENV];
 	delete env[SESSION_LEASE_OWNER_ID_ENV];
 
+	const launch = createCliSubprocessLaunchSpec(["--mode", "daemon", "--daemon-socket", socketPath]);
 	const logOffset = currentDaemonLogSize(socketPath);
-	const child = spawn(
-		process.execPath,
-		[...process.execArgv, entrypoint, "--mode", "daemon", "--daemon-socket", socketPath],
-		{
-			cwd: spawnCwd ?? process.cwd(),
-			detached: true,
-			env,
-			// No console window flashes on Windows for this detached daemon.
-			windowsHide: true,
-			// A pipe would tie the daemon's stderr to this short-lived CLI
-			// (EPIPE once it exits); crash details come from the daemon log,
-			// which the supervisor writes to before rethrowing startup errors.
-			stdio: "ignore",
-		},
-	);
+	const child = spawn(launch.command, launch.args, {
+		cwd: spawnCwd ?? process.cwd(),
+		detached: true,
+		env,
+		// No console window flashes on Windows for this detached daemon.
+		windowsHide: true,
+		// A pipe would tie the daemon's stderr to this short-lived CLI
+		// (EPIPE once it exits); crash details come from the daemon log,
+		// which the supervisor writes to before rethrowing startup errors.
+		stdio: "ignore",
+	});
 	let childFailure:
 		| { type: "error"; error: Error }
 		| { type: "exit"; code: number | null; signal: NodeJS.Signals | null }
