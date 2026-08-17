@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Added a Markdown renderer (`src/components/Markdown.tsx`) using `marked` + `DOMPurify`: headings, lists, tables, inline code, links (forced `target=_blank` + `rel=noopener`), with images stripped and a sanitized allowlist.
+- Added `Message.tsx` (user right-aligned subtle bubble vs assistant markdown), `StreamingCursor.tsx` (pulsing block while a `chat_delta` stream is open), `Thinking.tsx` (collapsible reasoning accordion with elapsed-time label and auto-collapse on done), `StepChip.tsx` (inline pipeline chip with status icon/color + detail tooltip), and `Composer.tsx` (auto-growing textarea, Enter=send / Shift+Enter=newline, send + stop/interrupt while busy).
+- Rewrote `ChatPane.tsx` onto the new components: a bottom-anchored message list with auto-scroll and user-scroll override, an inline live turn rail (thinking accordions + step chips) that persists as a transcript after the turn, and the new composer.
+- Added `.md-body` markdown styling tokens to `src/index.css` (tables, headings, code, blockquotes, links) consistent with the dark-terminal theme.
+- Added `marked` and `dompurify` as `web-ui` runtime dependencies (pre-approved by the wiring spec).
 - Added the v2 protocol contract layer (`src/lib/contract.ts`) with full `ServerEvent`/`ClientMessage`/`AgentState`/`ArtifactStore`/`ValidationGate` types, plus pure upsert and event-guard helpers.
 - Added a `MockSocket` (`src/lib/mock-socket.ts`) that replays recorded v2 event scripts for offline development, activated via `?mock=1`; real connections stay on the `/ws` WebSocket.
 - Added a pure chat-stream reducer (`src/lib/reducer.ts`) for `chat_delta` accumulation, finalized `chat` replacement with optimistic-user dedupe, and `thinking` block tracking, with a vitest unit suite (`test/reducer.test.ts`).
