@@ -6,6 +6,7 @@
 - Added Ctrl/Cmd+Enter as an additional composer send binding and Esc as an interrupt (stop) binding while the agent is busy; the stop button and textarea gained `aria-label`s and the placeholder hints the Esc-to-stop shortcut.
 - Added `aria-label`s to the tearsheet reload/open controls and the QuantCard raw-payload toggle, and `role="tab"`/`aria-selected` to the artifact-pane and file-kind tab bars for keyboard a11y.
 - Added a non-fatal `error` event to the mock-socket turn script so the error toast is reachable in `?mock=1` mode.
+- Fixed the Vite dev proxy dialing `localhost:3001` (which resolves to IPv6 `::1` on Windows) while the bridge binds `127.0.0.1` only, causing intermittent `ECONNREFUSED` on `/api` and `/ws`; the proxy now dials `127.0.0.1:3001`.
 - Added `QuantCard.tsx` rendering `card` events: a title row, a metric grid (label small-caps / value large), a validation-gate verdict row (PASS green / FAIL red / unknown gray), and a collapsible raw-JSON payload.
 - Added `TearsheetView.tsx` (sandboxed iframe tearsheet viewer with reload + open-in-browser), `FilesView.tsx` (artifact list by kind with CodeBlock preview), `PipelineView.tsx` (vertical step-history timeline grouped by run id), and `SubagentList.tsx` (worker rows with tier badge, status dot, tokens/min).
 - Rewrote `ArtifactPane.tsx` into a tabbed layout (Tearsheet / Files / Pipeline) with the sub-agent monitor pinned at the bottom across all tabs.
