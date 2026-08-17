@@ -12,10 +12,15 @@
  * Spawning via process.execPath avoids PATH issues inside the preview shell.
  * On exit of either child the whole tree is torn down.
  */
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import process from "node:process";
+
+// `--open` launches the default browser once the GUI is ready. Default off so
+// `npm run gui:live` and CI harnesses keep their current headless behavior.
+const openBrowser = process.argv.includes("--open");
 
 // preview-bridge.mjs lives in packages/web-ui/server/; the repo root is two
 // levels above packages/web-ui/, and the backend entry is resolved relative to
@@ -60,6 +65,23 @@ async function waitForHttp(url, timeoutMs = 30000) {
 	return false;
 }
 
+// Cross-platform default-browser launch. Mirrors the TUI's login-dialog openURL
+// (no shell, no quoting) so it is Windows-safe via rundll32 url.dll,FileProtocolHandler.
+function openUrl(url) {
+	const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+	const [command, ...args] =
+		process.platform === "darwin"
+			? ["open", url]
+			: process.platform === "win32"
+				? [path.join(systemRoot, "System32", "rundll32.exe"), "url.dll,FileProtocolHandler", url]
+				: ["xdg-open", url];
+	try {
+		execFile(command, args, () => {});
+	} catch {
+		// Best-effort: the GUI is still reachable at the printed URL.
+	}
+}
+
 function shutdown() {
 	for (const child of children) {
 		if (child.exitCode === null) child.kill("SIGTERM");
@@ -84,3 +106,6 @@ if (!guiUp) {
 run("backend", process.execPath, [tsxCli, "packages/web-ui-server/src/main.ts"], {
 	QUANT_BACKEND_PORT: backendPort,
 }, repoRoot);
+const guiUrl = `http://127.0.0.1:${guiPort}`;
+console.log(`[preview] open ${guiUrl}`);
+if (openBrowser) openUrl(guiUrl);

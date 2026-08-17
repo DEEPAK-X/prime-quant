@@ -53,6 +53,7 @@ import {
 	launchDaemonUpdateRestartCoordinator,
 	resolveDaemonUpdateRestartSocketPath,
 } from "../../cli/daemon-update-restart.js";
+import { launchGui } from "../../cli/gui-launch.js";
 import {
 	APP_NAME,
 	APP_TITLE,
@@ -4820,6 +4821,17 @@ export class InteractiveMode {
 				if (commandName === "logout" && !commandArgs) {
 					this.editor.setText("");
 					await this.showLogoutSelector();
+					return;
+				}
+				if (commandName === "gui" && !commandArgs) {
+					this.editor.setText("");
+					try {
+						const { child, url } = launchGui({ open: true, stdio: "ignore" });
+						child.on("error", (error) => this.showError(`gui failed: ${error.message}`));
+						this.showStatus(`GUI launching at ${url}`);
+					} catch (error) {
+						this.showError(error instanceof Error ? error.message : String(error));
+					}
 					return;
 				}
 				if (commandName === "mcp") {
