@@ -961,6 +961,7 @@ async function createDaemonClientConnection(options: {
 
 	try {
 		const attach = async (summary: SessionSummary) => {
+			updateStartupProgress("Attaching to session stream...");
 			const connection = await DaemonAgentConnection.attach(client, getDaemonSummaryActiveSessionId(summary), {
 				closeClientOnDispose: true,
 				sendClientEnv: true,
@@ -973,11 +974,13 @@ async function createDaemonClientConnection(options: {
 		};
 
 		if (options.activeSessionId) {
+			updateStartupProgress("Finding active session...");
 			const summary = await findAttachedDaemonSessionSummary(client, options.activeSessionId);
 			return await attach(summary);
 		}
 
 		if (options.sessionPath && !options.clientOwned) {
+			updateStartupProgress("Checking active daemon sessions...");
 			const activeSummary = findActiveDaemonSessionSummaryForSessionFile(
 				await listActiveDaemonSessionSummaries(client),
 				options.sessionPath,
@@ -993,6 +996,7 @@ async function createDaemonClientConnection(options: {
 			}
 		}
 
+		updateStartupProgress("Spawning session worker process...");
 		const response = await client.request({
 			type: "create",
 			config: options.config,
