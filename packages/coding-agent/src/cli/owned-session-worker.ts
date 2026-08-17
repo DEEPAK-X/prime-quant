@@ -355,6 +355,7 @@ export async function runOwnedSessionWorkerFrontend(
 				[SESSION_LEASES_ENABLED_ENV]: "1",
 				[SESSION_LEASE_OWNER_ID_ENV]: `owned-${randomUUID()}`,
 			},
+			windowsHide: true,
 			stdio,
 		});
 		currentChild = child;

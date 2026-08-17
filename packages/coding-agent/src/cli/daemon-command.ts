@@ -695,6 +695,7 @@ async function runStart(parsed: ParsedDaemonClientCommand): Promise<void> {
 		cwd: sessionArgs.config?.cwd ?? process.cwd(),
 		detached: true,
 		env: process.env,
+		windowsHide: true,
 		stdio: "ignore",
 	});
 	child.unref();

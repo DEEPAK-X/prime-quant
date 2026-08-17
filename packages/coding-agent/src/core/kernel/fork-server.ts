@@ -174,6 +174,7 @@ class ForkServer {
 				// forked child applies the per-kernel cwd/env itself. Inherit the daemon's.
 				const proc = spawn(this.params.python, ["-c", FORK_SERVER_SCRIPT, socketPath], {
 					env: this.launchEnv,
+					windowsHide: true,
 					stdio: ["ignore", "ignore", "pipe"],
 				});
 				this.proc = proc;
