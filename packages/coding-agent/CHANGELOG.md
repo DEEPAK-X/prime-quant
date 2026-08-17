@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added a `gui` public command (`prime-agent gui [--no-open] [--port <n>]`) and a `/gui` slash command that launch the PrimeQuant web GUI (Vite dev server + real bridge) as a supervised process tree and open the default browser; source-checkout-only, spawns `node` directly (no `npx`/`.cmd` shim) for Windows safety, and the TUI slash path detaches with `stdio: ignore` so it does not clobber the terminal.
 - Fixed kernel venv bootstrap on Windows by using `Scripts\python.exe` instead of the Unix `bin/python` path; the venv, IPython kernel, and all quant skills now bootstrap and run on Windows without manual `PRIME_AGENT_KERNEL_PYTHON` overrides.
 - Added automatic installation of the repo-local `prime-quant` engine (polars, numpy, optuna) and the `MetaTrader5` IPC binding into the kernel venv when the engine directory is detected; engine source changes invalidate the venv and trigger a rebuild.
 - Added `rlm.quant.fetch_data(symbol, timeframe, bars)` to pull live OHLCV bars from the local MetaTrader 5 terminal, run QA checks, bind the frame to kernel scope as `df` / `_last_df`, and return only a compact card; supports `PRIME_QUANT_MT5_*` env overrides for non-default terminals.
