@@ -33,6 +33,7 @@ export function TearsheetView({ url }: TearsheetViewProps) {
 					<button
 						type="button"
 						onClick={() => setReloadKey((key) => key + 1)}
+						aria-label="Reload tearsheet"
 						className="text-[10px] uppercase tracking-wider text-term-accent hover:underline"
 					>
 						reload
@@ -41,6 +42,7 @@ export function TearsheetView({ url }: TearsheetViewProps) {
 						href={url}
 						target="_blank"
 						rel="noopener noreferrer"
+						aria-label="Open tearsheet in a new browser tab"
 						className="text-[10px] uppercase tracking-wider text-term-accent hover:underline"
 					>
 						open ↗

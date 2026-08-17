@@ -89,6 +89,7 @@ export function QuantCard({ card }: QuantCardProps) {
 				type="button"
 				onClick={() => setOpen((value) => !value)}
 				aria-expanded={open}
+				aria-label={open ? "Collapse raw payload" : "Expand raw payload"}
 				className="flex w-full items-center gap-1.5 border-t border-term-border px-2 py-1 text-left hover:bg-term-panel"
 			>
 				<span className="text-[10px] text-term-dim">{open ? "▾" : "▸"}</span>

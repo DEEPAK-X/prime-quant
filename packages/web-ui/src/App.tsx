@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArtifactPaneConnected } from "./components/ArtifactPane";
 import { ChatPaneConnected } from "./components/ChatPane";
 import { Sidebar } from "./components/Sidebar";
+import { StatusToasts } from "./components/StatusToasts";
 import { TopBar } from "./components/TopBar";
 import { QuantStoreProvider, useQuantStore } from "./lib/store";
 
@@ -17,7 +18,7 @@ function readArtifactPaneOpen(): boolean {
 }
 
 function Shell() {
-	const { sessionId, messages, steps, tearsheets, protocol, demo, agentState, mt5, connection } = useQuantStore();
+	const { sessionId, messages, steps, tearsheets, protocol, demo, agentState, mt5, connection, errors } = useQuantStore();
 	const [artifactPaneOpen, setArtifactPaneOpen] = useState<boolean>(readArtifactPaneOpen);
 	const [narrow, setNarrow] = useState<boolean>(() =>
 		typeof window === "undefined" ? false : window.innerWidth < NARROW_BREAKPOINT,
@@ -50,6 +51,7 @@ function Shell() {
 				artifactPaneOpen={showArtifacts}
 				onToggleArtifactPane={() => setArtifactPaneOpen((open) => !open)}
 			/>
+			<StatusToasts errors={errors} connection={connection} />
 			<div className="flex min-h-0 flex-1">
 				<Sidebar sessionId={sessionId} messages={messages} steps={steps} tearsheets={tearsheets} />
 				<main className="flex min-w-0 flex-1 flex-col border-r border-term-border">

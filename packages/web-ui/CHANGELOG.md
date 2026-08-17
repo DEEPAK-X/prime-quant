@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Added `StatusToasts.tsx`: a persistent red fatal `error` banner under the topbar, transient auto-dismissing non-fatal error toasts, and a reconnect toast when the WebSocket drops after having been open.
+- Added Ctrl/Cmd+Enter as an additional composer send binding and Esc as an interrupt (stop) binding while the agent is busy; the stop button and textarea gained `aria-label`s and the placeholder hints the Esc-to-stop shortcut.
+- Added `aria-label`s to the tearsheet reload/open controls and the QuantCard raw-payload toggle, and `role="tab"`/`aria-selected` to the artifact-pane and file-kind tab bars for keyboard a11y.
+- Added a non-fatal `error` event to the mock-socket turn script so the error toast is reachable in `?mock=1` mode.
+- Added `QuantCard.tsx` rendering `card` events: a title row, a metric grid (label small-caps / value large), a validation-gate verdict row (PASS green / FAIL red / unknown gray), and a collapsible raw-JSON payload.
+- Added `TearsheetView.tsx` (sandboxed iframe tearsheet viewer with reload + open-in-browser), `FilesView.tsx` (artifact list by kind with CodeBlock preview), `PipelineView.tsx` (vertical step-history timeline grouped by run id), and `SubagentList.tsx` (worker rows with tier badge, status dot, tokens/min).
+- Rewrote `ArtifactPane.tsx` into a tabbed layout (Tearsheet / Files / Pipeline) with the sub-agent monitor pinned at the bottom across all tabs.
 - Added a Markdown renderer (`src/components/Markdown.tsx`) using `marked` + `DOMPurify`: headings, lists, tables, inline code, links (forced `target=_blank` + `rel=noopener`), with images stripped and a sanitized allowlist.
 - Added `Message.tsx` (user right-aligned subtle bubble vs assistant markdown), `StreamingCursor.tsx` (pulsing block while a `chat_delta` stream is open), `Thinking.tsx` (collapsible reasoning accordion with elapsed-time label and auto-collapse on done), `StepChip.tsx` (inline pipeline chip with status icon/color + detail tooltip), and `Composer.tsx` (auto-growing textarea, Enter=send / Shift+Enter=newline, send + stop/interrupt while busy).
 - Rewrote `ChatPane.tsx` onto the new components: a bottom-anchored message list with auto-scroll and user-scroll override, an inline live turn rail (thinking accordions + step chips) that persists as a transcript after the turn, and the new composer.

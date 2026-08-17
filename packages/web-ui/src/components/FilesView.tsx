@@ -41,11 +41,13 @@ export function FilesView({ artifacts }: FilesViewProps) {
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<header className="flex items-center border-b border-term-border">
+			<header className="flex items-center border-b border-term-border" role="tablist">
 				{KINDS.map(({ kind, label }) => (
 					<button
 						key={kind}
 						type="button"
+						role="tab"
+						aria-selected={tab === kind}
 						onClick={() => setTab(kind)}
 						className={`border-r border-term-border px-3 py-2 text-xs uppercase tracking-wider last:border-r-0 ${
 							tab === kind ? "bg-term-panel text-term-accent" : "text-term-dim hover:text-term-fg"

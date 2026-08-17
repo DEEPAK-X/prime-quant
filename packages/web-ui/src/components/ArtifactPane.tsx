@@ -31,11 +31,13 @@ export function ArtifactPane({ tearsheetUrl, artifacts, cards, steps, subagents 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			{/* Tab bar */}
-			<header className="flex shrink-0 items-center border-b border-term-border">
+			<header className="flex shrink-0 items-center border-b border-term-border" role="tablist">
 				{(Object.keys(TAB_LABEL) as ArtifactTab[]).map((value) => (
 					<button
 						key={value}
 						type="button"
+						role="tab"
+						aria-selected={tab === value}
 						onClick={() => setTab(value)}
 						className={`border-r border-term-border px-3 py-2 text-xs uppercase tracking-wider last:border-r-0 ${
 							tab === value ? "bg-term-panel text-term-accent" : "text-term-dim hover:text-term-fg"

@@ -103,6 +103,15 @@ function buildTurnScript(promptText: string): Array<{ delay: number; event: Serv
 	const script: Array<{ delay: number; event: ServerEvent }> = [
 		{ delay: 0, event: { type: "agent_state", state: "busy", detail: "streaming turn" } },
 		{
+			delay: 60,
+			event: {
+				type: "error",
+				scope: "mt5",
+				message: "symbol EURUSD tick stale — refetched from XMGlobal-MT5 6",
+				fatal: false,
+			},
+		},
+		{
 			delay: 30,
 			event: { type: "thinking", id: thinkId, delta: "Planning: fetch bars, run backtest, validate.", done: false },
 		},
