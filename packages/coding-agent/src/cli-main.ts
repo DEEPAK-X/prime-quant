@@ -6,7 +6,7 @@ import {
 	isOwnedSessionWorkerProcess,
 	maybeRunOwnedSessionWorkerFrontend,
 } from "./cli/owned-session-worker.js";
-import { startStartupProgress, stopStartupProgress } from "./cli/startup-progress.js";
+import { hasNonInteractiveStartupFlag, startStartupProgress, stopStartupProgress } from "./cli/startup-progress.js";
 import { APP_NAME } from "./config.js";
 
 export async function runCli(): Promise<void> {
@@ -41,6 +41,18 @@ export async function runCli(): Promise<void> {
 
 		try {
 			await main(process.argv.slice(2));
+		} catch (error) {
+			// Startup failures used to surface only on stderr, which some Windows
+			// terminal hosts (npm run under PowerShell) do not attach to the
+			// console, so a failed boot looked like a silent hang. Mirror the
+			// failure to stdout for interactive launches.
+			const message = error instanceof Error ? error.message : String(error);
+			const report = `Prime Agent failed to start: ${message}`;
+			console.error(report);
+			if (process.stdout.isTTY && !hasNonInteractiveStartupFlag(process.argv.slice(2))) {
+				process.stdout.write(`${report}\n`);
+			}
+			process.exit(1);
 		} finally {
 			stopStartupProgress();
 			closeOwnedSessionWorkerOwnerWatch();

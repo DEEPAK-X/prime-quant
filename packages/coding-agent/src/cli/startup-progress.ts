@@ -13,20 +13,7 @@ interface StartupProgressState {
 let activeState: StartupProgressState | undefined;
 let cleanupRegistered = false;
 
-export function shouldEnableStartupProgress(
-	argv: readonly string[] = process.argv.slice(2),
-	isStderrTty = process.stderr.isTTY,
-	env: NodeJS.ProcessEnv = process.env,
-): boolean {
-	if (!isStderrTty) {
-		return false;
-	}
-	if (env.CI || env.NODE_ENV === "test" || env.PI_STARTUP_BENCHMARK) {
-		return false;
-	}
-	if (env.PI_CODING_AGENT_DAEMON_WORKER || env.PI_DAEMON_CATALOG_PROCESS || env.PI_CODING_AGENT_OWNED_WORKER) {
-		return false;
-	}
+export function hasNonInteractiveStartupFlag(argv: readonly string[]): boolean {
 	for (const arg of argv) {
 		if (
 			arg === "--mode" ||
@@ -43,10 +30,94 @@ export function shouldEnableStartupProgress(
 			arg === "--list-models" ||
 			arg === "export"
 		) {
-			return false;
+			return true;
 		}
 	}
-	return true;
+	return false;
+}
+
+export function shouldEnableStartupProgress(
+	argv: readonly string[] = process.argv.slice(2),
+	isStderrTty = process.stderr.isTTY,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	if (!isStderrTty) {
+		return false;
+	}
+	if (env.CI || env.NODE_ENV === "test" || env.PI_STARTUP_BENCHMARK) {
+		return false;
+	}
+	if (env.PI_CODING_AGENT_DAEMON_WORKER || env.PI_DAEMON_CATALOG_PROCESS || env.PI_CODING_AGENT_OWNED_WORKER) {
+		return false;
+	}
+	return !hasNonInteractiveStartupFlag(argv);
+}
+
+const PLAIN_TEXT_INTERVAL_MS = 10_000;
+
+interface PlainTextProgressState {
+	timer?: NodeJS.Timeout;
+	currentMessage: string;
+	startTime: number;
+	lastLine: string;
+}
+
+let plainTextState: PlainTextProgressState | undefined;
+
+/**
+ * Some Windows terminal hosts (npm run under PowerShell) do not expose a TTY on
+ * stderr, which silently disables the spinner and every startup error. Fall back
+ * to plain text on stdout so a slow or failed daemon boot is always visible.
+ */
+export function shouldEmitPlainTextStartupProgress(
+	argv: readonly string[] = process.argv.slice(2),
+	isStderrTty = process.stderr.isTTY,
+	env: NodeJS.ProcessEnv = process.env,
+	stdoutIsTty = process.stdout.isTTY,
+): boolean {
+	if (isStderrTty || !stdoutIsTty) {
+		return false;
+	}
+	if (env.CI || env.NODE_ENV === "test" || env.PI_STARTUP_BENCHMARK) {
+		return false;
+	}
+	if (env.PI_CODING_AGENT_DAEMON_WORKER || env.PI_DAEMON_CATALOG_PROCESS || env.PI_CODING_AGENT_OWNED_WORKER) {
+		return false;
+	}
+	return !hasNonInteractiveStartupFlag(argv);
+}
+
+function writePlainTextProgress(message: string, elapsedSec?: number): void {
+	if (!plainTextState) {
+		return;
+	}
+	const line = elapsedSec === undefined ? `Prime Agent: ${message}` : `Prime Agent: ${message} (${elapsedSec}s)`;
+	if (plainTextState.lastLine === line) {
+		return;
+	}
+	plainTextState.lastLine = line;
+	process.stdout.write(`${line}\n`);
+}
+
+function startPlainTextProgress(initialMessage: string): void {
+	if (plainTextState) {
+		plainTextState.currentMessage = initialMessage;
+		return;
+	}
+	plainTextState = {
+		currentMessage: initialMessage,
+		startTime: Date.now(),
+		lastLine: "",
+	};
+	writePlainTextProgress(initialMessage);
+	plainTextState.timer = setInterval(() => {
+		if (!plainTextState) {
+			return;
+		}
+		const elapsedSec = Math.round((Date.now() - plainTextState.startTime) / 1000);
+		writePlainTextProgress(plainTextState.currentMessage, elapsedSec);
+	}, PLAIN_TEXT_INTERVAL_MS);
+	plainTextState.timer.unref();
 }
 
 function renderFrame(): void {
@@ -67,6 +138,9 @@ export function startStartupProgress(initialMessage = "Starting up...", argv?: r
 		return;
 	}
 	if (!shouldEnableStartupProgress(argv)) {
+		if (shouldEmitPlainTextStartupProgress(argv)) {
+			startPlainTextProgress(initialMessage);
+		}
 		return;
 	}
 
@@ -85,20 +159,29 @@ export function startStartupProgress(initialMessage = "Starting up...", argv?: r
 }
 
 export function updateStartupProgress(message: string): void {
-	if (!activeState) {
+	if (activeState) {
+		activeState.currentMessage = message;
+		renderFrame();
 		return;
 	}
-	activeState.currentMessage = message;
-	renderFrame();
+	if (plainTextState) {
+		plainTextState.currentMessage = message;
+		writePlainTextProgress(message);
+	}
 }
 
 export function stopStartupProgress(): void {
-	if (!activeState) {
-		return;
+	if (activeState) {
+		clearInterval(activeState.timer);
+		activeState = undefined;
+		if (process.stderr.isTTY) {
+			process.stderr.write("\r\x1b[2K");
+		}
 	}
-	clearInterval(activeState.timer);
-	activeState = undefined;
-	if (process.stderr.isTTY) {
-		process.stderr.write("\r\x1b[2K");
+	if (plainTextState) {
+		if (plainTextState.timer) {
+			clearInterval(plainTextState.timer);
+		}
+		plainTextState = undefined;
 	}
 }
