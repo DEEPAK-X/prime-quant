@@ -20,6 +20,13 @@
 - Never hardcode key checks with, eg. `matchesKey(keyData, "ctrl+x")`. All keybindings must be configurable. Add default to matching object (`DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS`)
 - NEVER modify `packages/ai/src/models.generated.ts` directly. Update `packages/ai/scripts/generate-models.ts` instead.
 
+## Windows Compatibility
+
+- **Always set `windowsHide: true`**: Every child process execution (`spawn`, `execFile`, `execFileSync`, `execSync`) must pass `windowsHide: true` to prevent flashing black console windows on Windows desktops.
+- **Never call `mkdir` on named pipe paths**: On Windows, named pipe paths start with `\\.\pipe\`. `dirname(pipePath)` evaluates to `\\.\pipe`, which is a Windows kernel device namespace, NOT a directory. Always use `defaultDaemonSocketDir()` or `os.tmpdir()` for lockfiles and state directories.
+- **Wrap directory `fsync` in `try / catch`**: Windows NTFS does not support `fsync` on directory descriptors and throws `EPERM`.
+- **Pure UTF-8 without BOM for JSON files**: Always write JSON files via Node `fs.writeFileSync(..., "utf8")` or scripts rather than PowerShell `Set-Content` to avoid UTF-8 BOM parse errors.
+
 ## Commands
 
 - After code changes (not documentation changes): `npm run check` (get full output, no tail). Fix all errors, warnings, and infos before committing.
