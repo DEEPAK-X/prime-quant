@@ -17,7 +17,11 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+// preview-bridge.mjs lives in packages/web-ui/server/; the repo root is two
+// levels above packages/web-ui/, and the backend entry is resolved relative to
+// the repo root (where the root `npm run server` script runs from).
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(root, "..", "..");
 const guiPort = process.env.PORT ?? "5173";
 const backendPort = process.env.QUANT_BACKEND_PORT ?? "3001";
 // Deps are hoisted to the repo root in this monorepo; resolve vite/tsx through
@@ -28,9 +32,9 @@ const tsxCli = path.join(path.dirname(require.resolve("tsx/package.json")), "dis
 
 const children = [];
 
-function run(name, command, args, env) {
+function run(name, command, args, env, cwd = root) {
 	const child = spawn(command, args, {
-		cwd: root,
+		cwd,
 		env: { ...process.env, ...env },
 		stdio: "inherit",
 	});
@@ -79,4 +83,4 @@ if (!guiUp) {
 }
 run("backend", process.execPath, [tsxCli, "packages/web-ui-server/src/main.ts"], {
 	QUANT_BACKEND_PORT: backendPort,
-});
+}, repoRoot);

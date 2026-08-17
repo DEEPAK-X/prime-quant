@@ -20,7 +20,8 @@ import { RpcSession } from "./rpc-session.js";
 import { createArtifactScanner, createTearsheetWatcher, sniffCard } from "./tearsheets.js";
 import type { CardSniffer } from "./translator.js";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+// src/main.ts -> src -> web-ui-server -> packages -> repo root (three levels up).
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 // The bridge is local-only: bind 127.0.0.1 explicitly, never 0.0.0.0.
 const host = DEFAULT_HOST;
 const port = Number(process.env.QUANT_BACKEND_PORT ?? DEFAULT_PORT);

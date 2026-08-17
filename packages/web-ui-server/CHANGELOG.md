@@ -9,3 +9,6 @@
 - Added a tearsheet registry and artifact scanner: HTML reports written by tool runs are watched (debounced, with polling fallback) and broadcast as `tearsheet` events served from `/reports/<file>`; generated `.py`/`.mq5`/`.md` files are surfaced as capped `artifact` events.
 - Added a throttled read-only MetaTrader 5 health probe (kernel-venv python, 30 s cache, in-flight dedupe, 10 s timeout) exposed via `/api/mt5`, the `hello` frame, and WS `refresh_mt5`.
 - Added `npm run server` (bridge alone), `npm run server:demo` (demo backend), and `npm run gui:live` (Vite GUI + bridge) root scripts.
+- Fixed the bridge composition root resolving the repo root one level too deep, which spawned the RPC child against `packages/packages/coding-agent/...` and `--cwd .../packages`, causing the agent to exit immediately.
+- Fixed `npm run gui:live` resolving the backend entry relative to `packages/web-ui/` (doubled `packages/web-ui-server`), so the preview backend now spawns from the repo root.
+- Made the GUI session directory best-effort: if it cannot be created (read-only repo root), the RPC client spawns the agent without `--session-dir` instead of failing.

@@ -162,10 +162,20 @@ export class RpcChildClient {
 		if (this.process) {
 			throw new Error("RPC child already started");
 		}
-		mkdirSync(this.sessionDir, { recursive: true });
+		// The GUI session dir is an isolation nicety, not a hard requirement:
+		// if the repo root is read-only (e.g. a sandbox), spawn the agent
+		// without --session-dir and let it use its default session location.
+		let sessionDir: string | null = null;
+		try {
+			mkdirSync(this.sessionDir, { recursive: true });
+			sessionDir = this.sessionDir;
+		} catch (error) {
+			this.log(`[rpc] could not create session dir ${this.sessionDir}: ${(error as Error).message}`);
+		}
 		const tsxCli = resolveTsxCli();
 		const cliEntry = path.join(this.repoRoot, "packages", "coding-agent", "src", "cli.ts");
-		const args = [tsxCli, cliEntry, "--mode", "rpc", "--cwd", this.repoRoot, "--session-dir", this.sessionDir];
+		const args = [tsxCli, cliEntry, "--mode", "rpc", "--cwd", this.repoRoot];
+		if (sessionDir) args.push("--session-dir", sessionDir);
 		this.log(`[rpc] spawn ${this.execPath} ${args.join(" ")}`);
 		this.process = this.spawnFn(this.execPath, args, {
 			cwd: this.repoRoot,

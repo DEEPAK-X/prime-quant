@@ -1,5 +1,8 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { V2Event } from "../src/events.js";
 import { RpcSession } from "../src/rpc-session.js";
@@ -87,15 +90,18 @@ describe("RpcSession over a fake RPC child", () => {
 	});
 
 	it("starts the child with the RPC CLI args and exposes ready after the get_state probe", async () => {
+		// A real (temp) repo root so the GUI session dir is creatable and the
+		// bridge passes --session-dir; the other tests use a fake "/repo".
+		const repoRoot = mkdtempSync(join(tmpdir(), "rpc-session-"));
 		harness = createHarness();
-		session = new RpcSession({ repoRoot: "/repo", spawn: harness.spawn, commandTimeoutMs: 1000 });
+		session = new RpcSession({ repoRoot, spawn: harness.spawn, commandTimeoutMs: 1000 });
 		const { child } = await startSession(session, harness);
 		expect(session.getAgentState()).toBe("ready");
 		expect(harness.children.length).toBe(1);
 		const { command, args } = harness.spawnCalls[0]!;
 		expect(command).toBe(process.execPath);
 		expect(args.join(" ")).toContain("packages/coding-agent/src/cli.ts");
-		expect(args.join(" ")).toContain("--mode rpc --cwd /repo --session-dir");
+		expect(args.join(" ")).toContain(`--mode rpc --cwd ${repoRoot} --session-dir`);
 		// The very first write is the readiness probe.
 		expect(writtenLines(child)[0]).toContain('"type":"get_state"');
 	});
