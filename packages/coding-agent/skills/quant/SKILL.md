@@ -65,10 +65,24 @@ pipe = await rlm.quant.run_pipeline(
 record = await rlm.quant.refine_log_failure(
     {"kind": "validation_gate", "pattern": "PBO 0.41 exceeds the 0.25 overfit gate"}
 )
+
+# 6. Load OHLCV data from a CSV or Parquet file into kernel `df`.
+card = await rlm.quant.load_data("data/EURUSD_M5.csv", timeframe="M5")
 ```
 
 `await rlm.quant.assumptions(spec)` prints the explicit assumptions behind a
 spec before any code executes.
+
+## Watcher Presets
+
+PRIME QUANT includes three schedule-able watcher presets for continuous monitoring via `prime-agent schedule`:
+
+1. **Risk Watcher** ([`watchers/risk-watcher.md`](watchers/risk-watcher.md)): Periodic drawdown and daily-loss monitoring against configured limits (`PRIME_QUANT_MAX_DRAWDOWN`, `PRIME_QUANT_MAX_DAILY_LOSS_USD`); returns a compact status card and calls `rlm.quant.refine_log_failure` on breach.
+   - Schedule: `prime-agent schedule "*/15 * * * *" "<risk-watcher prompt>"`
+2. **Flow Watcher** ([`watchers/flow-watcher.md`](watchers/flow-watcher.md)): Volume and volatility anomaly detection across a configurable watchlist via `rlm.quant.fetch_data`.
+   - Schedule: `prime-agent schedule "*/5 * * * *" "<flow-watcher prompt>"`
+3. **Research Watcher** ([`watchers/research-watcher.md`](watchers/research-watcher.md)): Automated triage of queued strategy ideas through the anti-overfit validation gate (CPCV + walk-forward DSR/PBO) via `rlm.quant.run_backtest`.
+   - Schedule: `prime-agent schedule "0 */4 * * *" "<research-watcher prompt>"`
 
 ## Safety
 
@@ -78,6 +92,7 @@ spec before any code executes.
   `PRIME_QUANT_MT5_LOGIN`, `PRIME_QUANT_MT5_PASSWORD`, `PRIME_QUANT_MT5_SERVER`,
   and `PRIME_QUANT_MT5_TIMEOUT` environment variables. A failed connection or
   QA error surfaces in the card (`qa.ok=false`), never as a traceback.
+- `load_data` provides offline file ingestion (CSV/Parquet) when MT5 is unavailable.
 - Never dump `_last_df`, `_last_backtest_df`, `_last_equity_curve`, or
   `_last_trades` into the model context — keep them bound in the kernel and
   reference them by name. The tearsheet HTML lives on disk only.
