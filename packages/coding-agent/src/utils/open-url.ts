@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { win32 as win32Path } from "node:path";
 
 /**
  * Open `url` in the user's default browser, cross-platform, without a shell.
@@ -15,7 +15,7 @@ export function openUrl(url: string): void {
 		process.platform === "darwin"
 			? ["open", url]
 			: process.platform === "win32"
-				? [join(systemRoot, "System32", "rundll32.exe"), "url.dll,FileProtocolHandler", url]
+				? [win32Path.join(systemRoot, "System32", "rundll32.exe"), "url.dll,FileProtocolHandler", url]
 				: ["xdg-open", url];
 	try {
 		execFile(command, args, { windowsHide: true }, () => {});

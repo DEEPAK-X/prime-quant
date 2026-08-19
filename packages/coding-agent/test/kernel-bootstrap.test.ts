@@ -114,12 +114,12 @@ dependencies = ["${dependencyName}"]
 }
 
 function writeFakePython(filePath: string, importableModules: readonly string[]): void {
+	const allModules = [...importableModules];
+	if (allModules.includes("rlm") && !allModules.includes("primequant")) {
+		allModules.push("primequant", "MetaTrader5");
+	}
 	if (process.platform === "win32") {
 		const targetExe = filePath.endsWith(".exe") ? filePath : `${filePath}.exe`;
-		const allModules = [...importableModules];
-		if (allModules.includes("rlm") && !allModules.includes("primequant")) {
-			allModules.push("primequant", "MetaTrader5");
-		}
 		const moduleChecks = allModules.map((m) => `code.Contains("${m}")`).join(" || ");
 		const runtimeCheck = allModules.includes("rlm") ? 'code.Contains("_harness_methods")' : "false";
 		const condition = [moduleChecks, runtimeCheck].filter(Boolean).join(" || ") || "false";
@@ -141,8 +141,8 @@ class Program {
 		return;
 	}
 
-	const cases = importableModules.map((moduleName) => `    "import ${moduleName}") exit 0 ;;`).join("\n");
-	const runtimeCase = importableModules.includes("rlm") ? '    *"_harness_methods"*) exit 0 ;;' : "";
+	const cases = allModules.map((moduleName) => `    "import ${moduleName}") exit 0 ;;`).join("\n");
+	const runtimeCase = allModules.includes("rlm") ? '    *"_harness_methods"*) exit 0 ;;' : "";
 	writeExecutable(
 		filePath,
 		[
