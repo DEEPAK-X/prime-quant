@@ -14,11 +14,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { V2Event } from "./events.js";
-import { createV2GuiBridge, DEFAULT_HOST, DEFAULT_PORT } from "./gui-bridge.js";
+import { createV2GuiBridge, DEFAULT_HOST, DEFAULT_PORT, type WatcherApi } from "./gui-bridge.js";
 import { createMt5Probe } from "./mt5.js";
 import { RpcSession } from "./rpc-session.js";
 import { createArtifactScanner, createTearsheetWatcher, sniffCard } from "./tearsheets.js";
 import type { CardSniffer } from "./translator.js";
+import { loadPresets, WatcherService } from "./watchers.js";
 
 // src/main.ts -> src -> web-ui-server -> packages -> repo root (three levels up).
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -77,6 +78,23 @@ try {
 		},
 	});
 
+	// A3 watcher arming: presets from the quant skill bundle, schedule CLI
+	// through the prebuilt bundle (tsx-free, so spawning stays fast).
+	const watcherPresets = await loadPresets(repoRoot);
+	const watcherService = new WatcherService(
+		path.join(repoRoot, "packages", "coding-agent", "dist", "bundle", "cli.js"),
+	);
+	const watchers: WatcherApi = {
+		listPresets: async () => watcherPresets,
+		listActive: () => watcherService.list(),
+		spawn: async (id) => {
+			const preset = watcherPresets.find((entry) => entry.id === id);
+			if (!preset) return { ok: false, output: `unknown preset: ${id}` };
+			return watcherService.spawn(preset.cron, preset.prompt);
+		},
+		cancel: (jobId) => watcherService.cancel(jobId),
+	};
+
 	const bridge = createV2GuiBridge({
 		port,
 		host,
@@ -88,6 +106,7 @@ try {
 		mt5: createMt5Probe({ log }),
 		sessionId,
 		artifactsRoot: repoRoot,
+		watchers,
 		log,
 	});
 	emit = (event) => bridge.emit(event);

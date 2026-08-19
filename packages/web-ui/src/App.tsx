@@ -10,6 +10,7 @@ import { BotsView } from "./views/BotsView";
 import { DashboardView } from "./views/DashboardView";
 import { PlaceholderView } from "./views/PlaceholderView";
 import { RoomsView } from "./views/RoomsView";
+import { TasksView } from "./views/TasksView";
 import { TrainingView } from "./views/TrainingView";
 
 const RAIL_KEY = "primequant.commandRailOpen";
@@ -82,7 +83,8 @@ function Shell() {
 					{view === "rooms" ? <RoomsView /> : null}
 					{view === "bots" ? <BotsView /> : null}
 					{view === "training" ? <TrainingView /> : null}
-					{view === "knowledge" || view === "tasks" || view === "logs" || view === "settings" ? (
+					{view === "tasks" ? <TasksView /> : null}
+					{view === "knowledge" || view === "logs" || view === "settings" ? (
 						<PlaceholderView view={view} />
 					) : null}
 				</main>

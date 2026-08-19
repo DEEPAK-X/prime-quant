@@ -219,6 +219,9 @@ const ROOMS = [
 const roomLogs = new Map(ROOMS.map((room) => [room.id, []]));
 let roomSeq = 0;
 
+// Demo watcher jobs, mutated by /api/watchers/spawn and /cancel.
+const demoActiveWatchers = [];
+
 function postRoomMessage(room, from, text) {
 	const message = {
 		type: "room_message",
@@ -270,6 +273,47 @@ const server = createServer((request, response) => {
 	}
 	if (url.pathname === "/api/tearsheet/latest" && request.method === "GET") {
 		sendJson(response, 200, { url: "/artifacts/tearsheet.html" });
+		return;
+	}
+	if (url.pathname === "/api/watchers" && request.method === "GET") {
+		sendJson(response, 200, {
+			presets: [
+				{ id: "risk-watcher", title: "Risk Watcher", summary: "Drawdown and daily-loss guard; logs breaches into harness memory.", cron: "*/15 * * * *", room: "risk-management" },
+				{ id: "flow-watcher", title: "Flow Watcher", summary: "Volume z-score and RVOL anomaly scan across the watchlist.", cron: "*/5 * * * *", room: "alerts" },
+				{ id: "research-watcher", title: "Research Watcher", summary: "Validation-gated triage of queued strategy ideas.", cron: "0 */4 * * *", room: "research" },
+			],
+		});
+		return;
+	}
+	if (url.pathname === "/api/watchers/active" && request.method === "GET") {
+		sendJson(response, 200, { active: demoActiveWatchers });
+		return;
+	}
+	if (url.pathname === "/api/watchers/spawn" && request.method === "POST") {
+		let body = "";
+		request.on("data", (chunk) => (body += chunk));
+		request.on("end", () => {
+			const id = JSON.parse(body || "{}").id ?? "watcher";
+			demoActiveWatchers.push({
+				jobId: `demo-job-${demoActiveWatchers.length + 1}`,
+				agent: "worker",
+				schedule: id === "flow-watcher" ? "*/5 * * * *" : id === "research-watcher" ? "0 */4 * * *" : "*/15 * * * *",
+				message: `Run the ${id}`,
+				nextRunAt: new Date(Date.now() + 5 * 60000).toISOString(),
+			});
+			sendJson(response, 200, { ok: true, output: `scheduled ${id} (demo)` });
+		});
+		return;
+	}
+	if (url.pathname === "/api/watchers/cancel" && request.method === "POST") {
+		let body = "";
+		request.on("data", (chunk) => (body += chunk));
+		request.on("end", () => {
+			const jobId = JSON.parse(body || "{}").jobId ?? "";
+			const index = demoActiveWatchers.findIndex((job) => job.jobId === jobId);
+			if (index !== -1) demoActiveWatchers.splice(index, 1);
+			sendJson(response, 200, { ok: true, output: `cancelled ${jobId} (demo)` });
+		});
 		return;
 	}
 	if (url.pathname === "/api/rooms" && request.method === "GET") {
