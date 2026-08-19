@@ -4,7 +4,7 @@
  */
 import { useMemo } from "react";
 import { navigate } from "../lib/navigation";
-import type { ArtifactStore, ChatMessage, SubagentEvent, TearsheetEntry } from "../lib/ws";
+import type { ArtifactStore, ChatMessage, RoomMessageEvent, SubagentEvent, TearsheetEntry } from "../lib/ws";
 
 const MAX_RAIL_ITEMS = 8;
 const MENTION_RE = /@you\b/i;
@@ -12,6 +12,7 @@ const MENTION_RE = /@you\b/i;
 interface CommandRailProps {
 	readonly subagents: Record<string, SubagentEvent>;
 	readonly messages: ChatMessage[];
+	readonly roomMessages: Record<string, RoomMessageEvent[]>;
 	readonly artifacts: ArtifactStore;
 	readonly tearsheets: TearsheetEntry[];
 }
@@ -34,7 +35,7 @@ function RailSection({ title, count, children }: { readonly title: string; reado
 	);
 }
 
-export function CommandRail({ subagents, messages, artifacts, tearsheets }: CommandRailProps) {
+export function CommandRail({ subagents, messages, roomMessages, artifacts, tearsheets }: CommandRailProps) {
 	const agents = useMemo(() => {
 		const rank: Record<SubagentEvent["status"], number> = { RUNNING: 0, DONE: 1, ERROR: 2 };
 		return Object.values(subagents)
@@ -42,10 +43,23 @@ export function CommandRail({ subagents, messages, artifacts, tearsheets }: Comm
 			.slice(0, MAX_RAIL_ITEMS);
 	}, [subagents]);
 
-	const mentions = useMemo(
-		() => messages.filter((message) => MENTION_RE.test(message.text)).slice(-MAX_RAIL_ITEMS).reverse(),
-		[messages],
-	);
+	const mentions = useMemo(() => {
+		const chatMentions = messages
+			.filter((message) => MENTION_RE.test(message.text))
+			.map((message) => ({
+				key: `chat-${message.id ?? message.text.slice(0, 24)}`,
+				from: message.role === "assistant" ? "orchestrator" : "you",
+				text: message.text,
+				ts: message.ts ?? "",
+			}));
+		const roomMentions = Object.values(roomMessages)
+			.flat()
+			.filter((message) => MENTION_RE.test(message.text))
+			.map((message) => ({ key: message.id, from: message.from, text: message.text, ts: message.ts }));
+		return [...chatMentions, ...roomMentions]
+			.sort((a, b) => (a.ts < b.ts ? 1 : -1))
+			.slice(0, MAX_RAIL_ITEMS);
+	}, [messages, roomMessages]);
 
 	const files = useMemo(() => {
 		const artifactFiles = [...artifacts.py, ...artifacts.mq5, ...artifacts.md].map((entry) => ({
@@ -89,16 +103,16 @@ export function CommandRail({ subagents, messages, artifacts, tearsheets }: Comm
 				{mentions.length === 0 ? (
 					<p className="px-3 pb-2 text-[10px] text-term-dim">nothing addressed to you</p>
 				) : (
-					mentions.map((message, index) => (
+					mentions.map((mention) => (
 						<button
-							key={message.id ?? index}
+							key={mention.key}
 							type="button"
 							onClick={() => navigate("rooms")}
 							className="block w-full truncate px-3 py-1.5 text-left text-[10px] text-term-fg hover:bg-term-raised"
-							title={message.text}
+							title={mention.text}
 						>
-							<span className="text-term-accent">{message.role === "assistant" ? "orchestrator" : "you"}</span>
-							<span className="text-term-dim"> · {message.text}</span>
+							<span className="text-term-accent">{mention.from}</span>
+							<span className="text-term-dim"> · {mention.text}</span>
 						</button>
 					))
 				)}

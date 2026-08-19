@@ -38,6 +38,7 @@ export class MockSocket {
 			this.readyState = OPEN;
 			this.onopen?.call(this, new Event("open"));
 			this.emit(HELLO);
+			for (const event of SEEDED_ROOMS) this.emit(event);
 			for (const event of SEEDED_SUBAGENTS) this.emit(event);
 			this.emit(SEEDED_MENTION);
 		}, 20);
@@ -122,6 +123,36 @@ const SEEDED_MENTION: ServerEvent = {
 	text: "@You risk watcher is live. Daily-loss guard armed at 1% equity — I will flag here on breach.",
 	ts: "2026-08-17T12:00:00Z",
 };
+
+/** A2 rooms: state frame + one seeded watcher post per non-general room. */
+const SEEDED_ROOMS: ServerEvent[] = [
+	{
+		type: "rooms_state",
+		rooms: [
+			{ id: "general", topic: "orchestrator chat" },
+			{ id: "alerts", topic: "breaches and urgent watcher flags" },
+			{ id: "risk-management", topic: "risk watcher output" },
+			{ id: "research", topic: "research watcher and pipeline results" },
+			{ id: "system-updates", topic: "bridge, daemon, and kernel notices" },
+		],
+	},
+	{
+		type: "room_message",
+		room: "risk-management",
+		id: "rm-1",
+		from: "watcher://risk",
+		text: "@You daily-loss guard armed at 1% equity. Drawdown 2.4% — inside the 5% limit.",
+		ts: "2026-08-17T12:00:10Z",
+	},
+	{
+		type: "room_message",
+		room: "research",
+		id: "rm-2",
+		from: "watcher://research",
+		text: "triage complete: 2 of 5 queued ideas passed the validation gate. Top candidate: EURUSD M5 rsi(14) mean reversion.",
+		ts: "2026-08-17T12:00:20Z",
+	},
+];
 
 const NOW = () => new Date().toISOString();
 

@@ -207,6 +207,42 @@ const MQ5_ARTIFACTS = [
 	},
 ];
 
+// A2 rooms demo: bounded in-memory room logs + watcher-style seeded posts.
+const ROOMS = [
+	{ id: "general", topic: "orchestrator chat" },
+	{ id: "alerts", topic: "breaches and urgent watcher flags" },
+	{ id: "risk-management", topic: "risk watcher output" },
+	{ id: "research", topic: "research watcher and pipeline results" },
+	{ id: "system-updates", topic: "bridge, daemon, and kernel notices" },
+];
+
+const roomLogs = new Map(ROOMS.map((room) => [room.id, []]));
+let roomSeq = 0;
+
+function postRoomMessage(room, from, text) {
+	const message = {
+		type: "room_message",
+		room,
+		id: `rm-${++roomSeq}`,
+		from,
+		text,
+		ts: new Date().toISOString(),
+	};
+	const log = roomLogs.get(room) ?? [];
+	log.push(message);
+	if (log.length > 200) log.splice(0, log.length - 200);
+	roomLogs.set(room, log);
+	return message;
+}
+
+const SEEDED_ROOM_POSTS = [
+	["risk-management", "watcher://risk", "@You daily-loss guard armed at 1% equity. Drawdown 2.4% — inside the 5% limit."],
+	["research", "watcher://research", "triage complete: 2 of 5 queued ideas passed the validation gate. Top candidate: EURUSD M5 rsi(14) mean reversion (dsr 1.32, pbo 0.11)."],
+	["system-updates", "bridge", "demo backend seeded — rooms, watchers, and pipeline fixtures live."],
+];
+
+let watcherTick = 0;
+
 function sendJson(response, status, body) {
 	response.writeHead(status, { "content-type": "application/json" });
 	response.end(JSON.stringify(body));
@@ -235,6 +271,43 @@ const server = createServer((request, response) => {
 	if (url.pathname === "/api/tearsheet/latest" && request.method === "GET") {
 		sendJson(response, 200, { url: "/artifacts/tearsheet.html" });
 		return;
+	}
+	if (url.pathname === "/api/rooms" && request.method === "GET") {
+		sendJson(response, 200, {
+			rooms: ROOMS.map((room) => ({ ...room, messages: (roomLogs.get(room.id) ?? []).length })),
+		});
+		return;
+	}
+	const roomMatch = /^\/api\/rooms\/([a-z0-9-]+)\/messages$/.exec(url.pathname);
+	if (roomMatch) {
+		const roomId = roomMatch[1];
+		if (!roomLogs.has(roomId)) {
+			sendJson(response, 404, { error: "unknown room" });
+			return;
+		}
+		if (request.method === "GET") {
+			sendJson(response, 200, { room: roomId, messages: roomLogs.get(roomId) });
+			return;
+		}
+		if (request.method === "POST") {
+			let body = "";
+			request.on("data", (chunk) => (body += chunk));
+			request.on("end", () => {
+				try {
+					const parsed = JSON.parse(body);
+					if (typeof parsed.from !== "string" || typeof parsed.text !== "string") {
+						sendJson(response, 400, { error: "from and text are required" });
+						return;
+					}
+					const message = postRoomMessage(roomId, parsed.from, parsed.text);
+					broadcast(wss.clients, message);
+					sendJson(response, 201, { message });
+				} catch {
+					sendJson(response, 400, { error: "invalid JSON body" });
+				}
+			});
+			return;
+		}
 	}
 	if (url.pathname === "/artifacts/tearsheet.html" && request.method === "GET") {
 		response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -289,12 +362,30 @@ wss.on("connection", (socket) => {
 
 	// Welcome, then kick off a self-running demo cycle so the GUI is alive
 	// immediately after connect.
+	broadcast([socket], { type: "rooms_state", rooms: ROOMS });
+	for (const [room, from, text] of SEEDED_ROOM_POSTS) {
+		const existing = (roomLogs.get(room) ?? []).find((message) => message.from === from && message.text === text);
+		broadcast([socket], existing ?? postRoomMessage(room, from, text));
+	}
 	broadcast([socket], {
 		type: "chat",
 		role: "assistant",
 		text: "orchestrator online. Demo backend seeded — I'll start a research run on EURUSD M5 (mean reversion) right away.",
 	});
 	setTimeout(() => runDemoPipeline([socket]), 700);
+
+	// Watcher liveliness: a flow-watcher card every 45s into #alerts.
+	const watcherTimer = setInterval(() => {
+		watcherTick += 1;
+		const z = (2.4 + Math.random() * 1.6).toFixed(1);
+		const message = postRoomMessage(
+			"alerts",
+			"watcher://flow",
+			`EURUSD M5 volume z-score ${z} (threshold 2.5) — ${Number(z) > 2.5 ? "anomaly flagged" : "within tolerance"} · tick ${watcherTick}`,
+		);
+		if (socket.readyState === socket.OPEN) broadcast([socket], message);
+	}, 45000);
+	socket.on("close", () => clearInterval(watcherTimer));
 });
 
 server.listen(PORT, () => {
