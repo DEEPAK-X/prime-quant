@@ -1,3 +1,9 @@
+> **PRIME QUANT** — this fork turns Prime Agent into a deterministic FX/CFD
+> quant research agent that runs natively on Windows against a local
+> MetaTrader 5 terminal. Start here: [`prime-quant/README.md`](prime-quant/README.md)
+> · Windows setup: [`packages/coding-agent/docs/windows.md`](packages/coding-agent/docs/windows.md)
+> · Launch on Windows: `prime-quant.cmd`
+
 <p align="center">
   <a href="https://primeintellect.ai">
     <picture>

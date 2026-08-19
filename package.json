@@ -19,6 +19,7 @@
 		"server": "node --import tsx packages/web-ui-server/src/main.ts",
 		"server:demo": "node packages/web-ui/server/demo-backend.mjs",
 		"tui": "tsx packages/coding-agent/src/cli.ts",
+		"tui:dist": "node packages/coding-agent/dist/bundle/cli.js",
 		"tui:lite": "tsx packages/coding-agent/src/cli.ts --lightweight",
 		"start": "tsx packages/coding-agent/src/cli.ts",
 		"start:lite": "tsx packages/coding-agent/src/cli.ts --lightweight",
