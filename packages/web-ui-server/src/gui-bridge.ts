@@ -32,6 +32,15 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { AgentState, Mt5Status, V2Event } from "./events.js";
 import { isValidRoomId, type RoomMessage, RoomsRegistry } from "./rooms.js";
 import { safeReportName } from "./tearsheets.js";
+import type { ActiveWatcher, WatcherPreset } from "./watchers.js";
+
+/** A3 watcher surface injected into the bridge (presets + schedule CLI). */
+export interface WatcherApi {
+	listPresets(): Promise<WatcherPreset[]>;
+	listActive(): Promise<ActiveWatcher[]>;
+	spawn(id: string): Promise<{ ok: boolean; output: string }>;
+	cancel(jobId: string): Promise<{ ok: boolean; output: string }>;
+}
 
 export const DEFAULT_PORT = 3001;
 // Bind IPv4 explicitly: on some hosts `localhost` resolves to ::1 while
@@ -327,6 +336,8 @@ export interface V2GuiBridgeOptions {
 	artifactsRoot: string;
 	/** A2 rooms registry (defaults to the PLAN.md room set). */
 	rooms?: RoomsRegistry;
+	/** A3 watcher presets + arming (absent in tests without a scheduler). */
+	watchers?: WatcherApi;
 	log?: (message: string) => void;
 }
 
@@ -612,6 +623,40 @@ export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
 				return;
 			}
 			return sendJson(res, 405, { error: "method not allowed" });
+		}
+
+		// A3 watchers: preset catalog, active jobs, arm/cancel via schedule CLI.
+		if (path === "/api/watchers" && method === "GET") {
+			if (!options.watchers) return sendJson(res, 200, { presets: [] });
+			sendJson(res, 200, { presets: await options.watchers.listPresets() });
+			return;
+		}
+		if (path === "/api/watchers/active" && method === "GET") {
+			if (!options.watchers) return sendJson(res, 200, { active: [] });
+			sendJson(res, 200, { active: await options.watchers.listActive() });
+			return;
+		}
+		if (path === "/api/watchers/spawn" && method === "POST") {
+			if (!options.watchers) return sendJson(res, 503, { error: "scheduler unavailable" });
+			try {
+				const parsed = JSON.parse(await readBody(req)) as { id?: unknown };
+				if (typeof parsed?.id !== "string") return sendJson(res, 400, { error: "id is required" });
+				sendJson(res, 200, await options.watchers.spawn(parsed.id));
+				return;
+			} catch {
+				return sendJson(res, 400, { error: "invalid JSON body" });
+			}
+		}
+		if (path === "/api/watchers/cancel" && method === "POST") {
+			if (!options.watchers) return sendJson(res, 503, { error: "scheduler unavailable" });
+			try {
+				const parsed = JSON.parse(await readBody(req)) as { jobId?: unknown };
+				if (typeof parsed?.jobId !== "string") return sendJson(res, 400, { error: "jobId is required" });
+				sendJson(res, 200, await options.watchers.cancel(parsed.jobId));
+				return;
+			} catch {
+				return sendJson(res, 400, { error: "invalid JSON body" });
+			}
 		}
 
 		if (method === "GET" && path.startsWith("/reports/")) {

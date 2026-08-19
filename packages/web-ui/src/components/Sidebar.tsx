@@ -28,7 +28,7 @@ const NAV_GROUPS: ReadonlyArray<{ label: string; items: ReadonlyArray<{ id: View
 		label: "Monitor",
 		items: [
 			{ id: "agents", label: "Agents" },
-			{ id: "tasks", label: "Tasks", badge: "M2" },
+			{ id: "tasks", label: "Tasks" },
 			{ id: "knowledge", label: "Knowledge Base", badge: "M2" },
 		],
 	},
