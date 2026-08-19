@@ -96,6 +96,11 @@ packages/coding-agent/src/
 Defaults rely on the auto-logged-in terminal; set these only for non-default
 setups or portable installs.
 
+## Guides
+
+- [MetaTrader 5 Setup Guide](docs/mt5-setup.md) — Terminal configuration, market-watch symbols, environment variables, and live data verification.
+- [CSV & Parquet Ingestion Guide](docs/csv-setup.md) — Loading broker historical files with `rlm.quant.load_data`, supported column aliases, UTC timezone handling, and Parquet optimization.
+
 ## Testing
 
 ```bash
