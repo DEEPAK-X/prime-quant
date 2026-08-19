@@ -29,17 +29,196 @@ CANON_ASK = "ask"
 _OHLCV = (CANON_OPEN, CANON_HIGH, CANON_LOW, CANON_CLOSE)
 _REQUIRED = (CANON_TIME, *_OHLCV)
 
-# Common MT5 export aliases -> canonical.
+# Common MT4/MT5, broker, and market-data export aliases -> canonical.
 _ALIAS_MAP = {
+    # Time aliases
     "datetime": CANON_TIME,
     "timestamp": CANON_TIME,
+    "date_time": CANON_TIME,
+    "date time": CANON_TIME,
+    "gmt time": CANON_TIME,
+    "time (utc)": CANON_TIME,
+    "date (utc)": CANON_TIME,
+    "dtime": CANON_TIME,
+    "time": CANON_TIME,
     "date": CANON_TIME,
+    "<datetime>": CANON_TIME,
+    "<timestamp>": CANON_TIME,
+    "<date>": CANON_TIME,
+    "<time>": CANON_TIME,
+    "<dtime>": CANON_TIME,
+    "ts": CANON_TIME,
+    "dt": CANON_TIME,
+
+    # Open aliases
     "o": CANON_OPEN,
+    "open": CANON_OPEN,
+    "<open>": CANON_OPEN,
+    "open_price": CANON_OPEN,
+    "openprice": CANON_OPEN,
+    "first": CANON_OPEN,
+
+    # High aliases
     "h": CANON_HIGH,
+    "high": CANON_HIGH,
+    "<high>": CANON_HIGH,
+    "high_price": CANON_HIGH,
+    "highprice": CANON_HIGH,
+    "max": CANON_HIGH,
+
+    # Low aliases
     "l": CANON_LOW,
+    "low": CANON_LOW,
+    "<low>": CANON_LOW,
+    "low_price": CANON_LOW,
+    "lowprice": CANON_LOW,
+    "min": CANON_LOW,
+
+    # Close aliases
     "c": CANON_CLOSE,
+    "close": CANON_CLOSE,
+    "<close>": CANON_CLOSE,
+    "close_price": CANON_CLOSE,
+    "closeprice": CANON_CLOSE,
+    "last": CANON_CLOSE,
+    "price": CANON_CLOSE,
+    "adj close": CANON_CLOSE,
+    "adj_close": CANON_CLOSE,
+    "adjclose": CANON_CLOSE,
+
+    # Volume aliases
     "vol": CANON_VOLUME,
+    "volume": CANON_VOLUME,
+    "v": CANON_VOLUME,
+    "<vol>": CANON_VOLUME,
+    "<volume>": CANON_VOLUME,
+    "<tickvol>": CANON_VOLUME,
+    "tick_volume": CANON_VOLUME,
+    "tickvol": CANON_VOLUME,
+    "tick_vol": CANON_VOLUME,
+    "real_volume": CANON_VOLUME,
+    "realvol": CANON_VOLUME,
+    "real_vol": CANON_VOLUME,
+    "qty": CANON_VOLUME,
+    "quantity": CANON_VOLUME,
+    "total_volume": CANON_VOLUME,
+    "base_volume": CANON_VOLUME,
+    "quote_volume": CANON_VOLUME,
+
+    # Spread aliases
+    "spread": CANON_SPREAD,
+    "<spread>": CANON_SPREAD,
     "spread_points": CANON_SPREAD,
+    "spread_pts": CANON_SPREAD,
+    "spreads": CANON_SPREAD,
+
+    # Bid / Ask aliases
+    "bid": CANON_BID,
+    "<bid>": CANON_BID,
+    "bid_price": CANON_BID,
+    "bidprice": CANON_BID,
+    "ask": CANON_ASK,
+    "<ask>": CANON_ASK,
+    "ask_price": CANON_ASK,
+    "askprice": CANON_ASK,
+}
+
+
+# Target priorities for canonical columns to avoid duplicate renames.
+_TARGET_PRIORITIES: dict[str, list[str]] = {
+    CANON_TIME: [
+        "time",
+        "datetime",
+        "timestamp",
+        "<datetime>",
+        "<timestamp>",
+        "date_time",
+        "date time",
+        "gmt time",
+        "time (utc)",
+        "date (utc)",
+        "dtime",
+        "<dtime>",
+        "date",
+        "<date>",
+        "<time>",
+        "dt",
+        "ts",
+    ],
+    CANON_OPEN: [
+        "open",
+        "<open>",
+        "open_price",
+        "openprice",
+        "o",
+        "first",
+    ],
+    CANON_HIGH: [
+        "high",
+        "<high>",
+        "high_price",
+        "highprice",
+        "h",
+        "max",
+    ],
+    CANON_LOW: [
+        "low",
+        "<low>",
+        "low_price",
+        "lowprice",
+        "l",
+        "min",
+    ],
+    CANON_CLOSE: [
+        "close",
+        "<close>",
+        "close_price",
+        "closeprice",
+        "c",
+        "last",
+        "price",
+        "adj close",
+        "adj_close",
+        "adjclose",
+    ],
+    CANON_VOLUME: [
+        "volume",
+        "<volume>",
+        "tick_volume",
+        "tickvol",
+        "<tickvol>",
+        "tick_vol",
+        "vol",
+        "<vol>",
+        "real_volume",
+        "realvol",
+        "real_vol",
+        "qty",
+        "quantity",
+        "total_volume",
+        "base_volume",
+        "quote_volume",
+        "v",
+    ],
+    CANON_SPREAD: [
+        "spread",
+        "<spread>",
+        "spread_points",
+        "spread_pts",
+        "spreads",
+    ],
+    CANON_BID: [
+        "bid",
+        "<bid>",
+        "bid_price",
+        "bidprice",
+    ],
+    CANON_ASK: [
+        "ask",
+        "<ask>",
+        "ask_price",
+        "askprice",
+    ],
 }
 
 
@@ -79,30 +258,163 @@ class QAResult:
 
 
 def _normalize_columns(df: pl.DataFrame) -> pl.DataFrame:
-    renamed: dict[str, str] = {}
-    for col in df.columns:
-        key = col.strip().lower()
-        if key in _ALIAS_MAP:
-            renamed[col] = _ALIAS_MAP[key]
-        elif key != col.lower():
-            renamed[col] = key
-    if renamed:
-        df = df.rename(renamed)
+    col_keys = {col: col.strip().lower() for col in df.columns}
+
+    # Detect separate date and time columns (e.g. <DATE> and <TIME>, Date and Time)
+    date_cols = [c for c, k in col_keys.items() if k in ("date", "<date>")]
+    time_cols = [c for c, k in col_keys.items() if k in ("time", "<time>")]
+
+    if date_cols and time_cols and date_cols[0] != time_cols[0]:
+        d_col, t_col = date_cols[0], time_cols[0]
+        combined = pl.concat_str([pl.col(d_col).cast(pl.String), pl.col(t_col).cast(pl.String)], separator=" ")
+        df = df.with_columns(combined.alias(CANON_TIME)).drop([d_col, t_col])
+        col_keys = {col: col.strip().lower() for col in df.columns}
+
+    assigned_sources: set[str] = set()
+    renames: dict[str, str] = {}
+
+    for target, candidates in _TARGET_PRIORITIES.items():
+        if target in df.columns:
+            for col, key in col_keys.items():
+                if col == target:
+                    assigned_sources.add(col)
+                    break
+            continue
+        for cand in candidates:
+            matched_col = None
+            for col, key in col_keys.items():
+                if col not in assigned_sources and key == cand:
+                    matched_col = col
+                    break
+            if matched_col is not None:
+                renames[matched_col] = target
+                assigned_sources.add(matched_col)
+                break
+
+    existing_names = (set(df.columns) - set(renames.keys())) | set(renames.values())
+    for col, key in col_keys.items():
+        if col not in assigned_sources:
+            if key not in existing_names:
+                renames[col] = key
+                existing_names.add(key)
+
+    if renames:
+        df = df.rename(renames)
     return df
 
 
-def _coerce_schema(df: pl.DataFrame) -> pl.DataFrame:
+def _coerce_time_column(df: pl.DataFrame) -> pl.DataFrame:
     if CANON_TIME not in df.columns:
         raise ValueError(f"missing required time column; have {df.columns}")
 
-    if df.schema[CANON_TIME] != pl.Datetime:
-        df = df.with_columns(pl.col(CANON_TIME).cast(pl.Datetime("us")))
+    s = df[CANON_TIME]
+
+    if s.dtype.is_numeric():
+        valid = s.drop_nulls()
+        first_val = abs(float(valid[0])) if len(valid) > 0 else 0.0
+        if first_val > 1e16:
+            unit = "ns"
+        elif first_val > 1e13:
+            unit = "us"
+        elif first_val > 1e10:
+            unit = "ms"
+        else:
+            unit = "s"
+        expr = (
+            pl.from_epoch(pl.col(CANON_TIME).cast(pl.Int64), time_unit=unit)
+            .cast(pl.Datetime("us"))
+            .dt.replace_time_zone("UTC")
+        )
+        return df.with_columns(expr.alias(CANON_TIME))
+
+    if s.dtype == pl.Date:
+        expr = pl.col(CANON_TIME).cast(pl.Datetime("us")).dt.replace_time_zone("UTC")
+        return df.with_columns(expr.alias(CANON_TIME))
+
+    if isinstance(s.dtype, pl.Datetime):
+        if s.dtype.time_zone is None:
+            expr = pl.col(CANON_TIME).cast(pl.Datetime("us")).dt.replace_time_zone("UTC")
+        else:
+            expr = pl.col(CANON_TIME).dt.convert_time_zone("UTC").cast(pl.Datetime("us", "UTC"))
+        return df.with_columns(expr.alias(CANON_TIME))
+
+    if s.dtype in (pl.String, pl.Utf8, pl.Object):
+        str_s = s.cast(pl.String)
+        parsed = None
+        try:
+            candidate = str_s.str.to_datetime(strict=False)
+            if candidate.null_count() == 0 and len(candidate) > 0:
+                parsed = candidate
+        except Exception:
+            pass
+
+        if parsed is None:
+            fmts = [
+                "%Y.%m.%d %H:%M:%S",
+                "%Y.%m.%d %H:%M",
+                "%Y.%m.%d",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%d",
+                "%Y/%m/%d %H:%M:%S",
+                "%Y/%m/%d %H:%M",
+                "%Y/%m/%d",
+                "%d/%m/%Y %H:%M:%S",
+                "%d/%m/%Y %H:%M",
+                "%d/%m/%Y",
+                "%d.%m.%Y %H:%M:%S",
+                "%d.%m.%Y %H:%M",
+                "%d.%m.%Y",
+                "%m/%d/%Y %H:%M:%S",
+                "%m/%d/%Y %H:%M",
+                "%m/%d/%Y",
+                "%Y-%m-%dT%H:%M:%S%z",
+                "%Y-%m-%dT%H:%M:%SZ",
+                "%Y-%m-%dT%H:%M:%S",
+            ]
+            for f in fmts:
+                try:
+                    candidate = str_s.str.to_datetime(f, strict=False)
+                    if candidate.null_count() == 0 and len(candidate) > 0:
+                        parsed = candidate
+                        break
+                except Exception:
+                    continue
+
+        if parsed is None or (len(parsed) > 0 and parsed.null_count() == len(parsed)):
+            raise ValueError(f"Unable to parse datetime column '{CANON_TIME}'")
+
+        if parsed.dtype.time_zone is None:
+            expr = parsed.cast(pl.Datetime("us")).dt.replace_time_zone("UTC")
+        else:
+            expr = parsed.dt.convert_time_zone("UTC").cast(pl.Datetime("us", "UTC"))
+        return df.with_columns(expr.alias(CANON_TIME))
+
+    raise ValueError(f"Unsupported time column type: {s.dtype}")
+
+
+def _coerce_schema(df: pl.DataFrame) -> pl.DataFrame:
+    df = _coerce_time_column(df)
 
     for col in _OHLCV:
-        if col in df.columns and df.schema[col] not in (pl.Float64, pl.Float32):
-            df = df.with_columns(pl.col(col).cast(pl.Float64))
+        if col in df.columns:
+            if df.schema[col] not in (pl.Float64, pl.Float32):
+                if df.schema[col] in (pl.String, pl.Utf8):
+                    cleaned = pl.col(col).cast(pl.String).str.replace_all(r"[$€£,\s]", "").cast(pl.Float64, strict=False)
+                    df = df.with_columns(cleaned.alias(col))
+                else:
+                    df = df.with_columns(pl.col(col).cast(pl.Float64, strict=False))
+
     if CANON_VOLUME in df.columns and not df.schema[CANON_VOLUME].is_numeric():
-        df = df.with_columns(pl.col(CANON_VOLUME).cast(pl.Float64))
+        if df.schema[CANON_VOLUME] in (pl.String, pl.Utf8):
+            cleaned = pl.col(CANON_VOLUME).cast(pl.String).str.replace_all(r"[,\s]", "").cast(pl.Float64, strict=False)
+            df = df.with_columns(cleaned.alias(CANON_VOLUME))
+        else:
+            df = df.with_columns(pl.col(CANON_VOLUME).cast(pl.Float64, strict=False))
+
+    if CANON_SPREAD in df.columns and not df.schema[CANON_SPREAD].is_numeric():
+        df = df.with_columns(pl.col(CANON_SPREAD).cast(pl.Float64, strict=False))
+
     return df
 
 
@@ -120,28 +432,69 @@ def _ensure_spread(df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
+def _detect_separator(path: Path) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for _ in range(5):
+                line = f.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                if "\t" in line:
+                    return "\t"
+                if ";" in line:
+                    return ";"
+                if "," in line:
+                    return ","
+    except Exception:
+        pass
+    return ","
+
+
 def load_ohlcv(
     path: str | Path,
     *,
     timeframe_seconds: int | None = None,
     instrument: str | None = None,
 ) -> tuple[pl.DataFrame, QAResult]:
-    """Load an MT5 Parquet or CSV export and run QA checks.
+    """Load a broker CSV or Parquet export and run QA checks.
 
-    Returns (DataFrame, QAResult). The frame is sorted ascending by time and
-    deduplicated; QA issues are reported but never silently mutate the data
-    beyond sort/dedupe and type coercion.
+    Returns (DataFrame, QAResult). The frame is sorted ascending by time,
+    deduplicated, and normalized to canonical OHLCV schema with timezone-aware
+    UTC timestamps.
     """
     p = Path(path)
     if not p.exists():
-        raise FileNotFoundError(p)
+        raise FileNotFoundError(f"File not found: {p}")
 
-    if p.suffix.lower() in (".parquet", ".pq"):
-        df = pl.read_parquet(p)
-    elif p.suffix.lower() in (".csv", ".txt"):
-        df = pl.read_csv(p, try_parse_dates=True)
+    if p.stat().st_size == 0:
+        raise ValueError(f"Data file is empty: {p}")
+
+    suffix = p.suffix.lower()
+    if suffix in (".parquet", ".pq"):
+        try:
+            df = pl.read_parquet(p)
+        except Exception as err:
+            raise ValueError(f"Failed to read parquet file {p}: {err}") from err
+    elif suffix in (".csv", ".txt", ".tsv", ".dat", ".csv.gz", ".csv.zip"):
+        sep = "\t" if suffix == ".tsv" else _detect_separator(p)
+        try:
+            df = pl.read_csv(
+                p,
+                separator=sep,
+                try_parse_dates=False,
+                infer_schema_length=10000,
+                truncate_ragged_lines=True,
+            )
+        except Exception as err:
+            raise ValueError(f"Failed to read CSV file {p}: {err}") from err
     else:
         raise ValueError(f"unsupported file type: {p.suffix}")
+
+    if df.height == 0:
+        raise ValueError(f"Data file contains no rows: {p}")
 
     df = _normalize_columns(df)
     df = _coerce_schema(df)

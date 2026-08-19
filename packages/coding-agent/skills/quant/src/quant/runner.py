@@ -345,6 +345,8 @@ def _build_config(spec: dict[str, Any]) -> Any:
 
 
 def _resolve_data(data: Any, namespace: dict[str, Any]) -> Any:
+    import os
+    from pathlib import Path
     import polars as pl
 
     if data is None:
@@ -355,10 +357,16 @@ def _resolve_data(data: Any, namespace: dict[str, Any]) -> Any:
                 "pass data= or load an OHLCV frame into `df` first"
             )
         return candidate
-    if isinstance(data, str):
-        if data.endswith(".parquet"):
-            return pl.read_parquet(data)
-        return pl.read_csv(data)
+    if isinstance(data, (str, Path, os.PathLike)):
+        data_str = os.fspath(data) if isinstance(data, os.PathLike) else str(data)
+        try:
+            from primequant.data.loader import load_ohlcv
+            df, _ = load_ohlcv(data_str)
+            return df
+        except Exception:
+            if data_str.endswith((".parquet", ".pq")):
+                return pl.read_parquet(data_str)
+            return pl.read_csv(data_str)
     if isinstance(data, pl.DataFrame):
         return data
     module = type(data).__module__
