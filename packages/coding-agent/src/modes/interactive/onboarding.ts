@@ -33,8 +33,24 @@ export function isOnboardingModelReady(state: OnboardingStartupState): boolean {
 	return state.model !== undefined && state.modelRegistry.hasConfiguredAuth(state.model);
 }
 
+export function hasEnvApiKeys(env: NodeJS.ProcessEnv = process.env): boolean {
+	return Boolean(
+		env.ANTHROPIC_API_KEY ||
+			env.OPENAI_API_KEY ||
+			env.GEMINI_API_KEY ||
+			env.GROQ_API_KEY ||
+			env.DEEPSEEK_API_KEY ||
+			env.MISTRAL_API_KEY ||
+			env.TOGETHER_API_KEY ||
+			env.FIREWORKS_API_KEY ||
+			env.PRIME_API_KEY ||
+			env.PRIME_AGENT_LIGHTWEIGHT === "1" ||
+			env.PRIME_AGENT_LIGHTWEIGHT === "true",
+	);
+}
+
 export function shouldRunOnboarding(state: OnboardingStartupState): boolean {
-	if (state.settingsManager.getOnboardingShown()) {
+	if (state.settingsManager.getOnboardingShown() || hasEnvApiKeys()) {
 		return false;
 	}
 	state.modelRegistry.refresh();

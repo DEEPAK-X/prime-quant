@@ -7,6 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { freemem } from "node:os";
 import { resolve } from "node:path";
 import { appendRotatingLog, expandTildePath, getClientErrorLogPath, getDaemonLogPath, VERSION } from "../config.js";
 import { ORPHAN_PROCESS_JOURNAL_ENV } from "../core/orphan-process-journal.js";
@@ -527,8 +528,37 @@ function findFirstEarlyLaunchPositional(args: readonly string[]): { index: numbe
 	return undefined;
 }
 
+export function isLightweightRequested(
+	args: readonly string[] = process.argv.slice(2),
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	if (
+		env.PRIME_AGENT_LIGHTWEIGHT === "1" ||
+		env.PRIME_AGENT_LIGHTWEIGHT === "true" ||
+		env.PRIME_AGENT_NO_DAEMON === "1" ||
+		env.PRIME_AGENT_NO_DAEMON === "true" ||
+		env.PI_DISABLE_DAEMON === "1" ||
+		env.PI_DISABLE_DAEMON === "true"
+	) {
+		return true;
+	}
+	if (args.includes("--lightweight") || args.includes("--no-daemon")) {
+		return true;
+	}
+	if (process.platform === "win32") {
+		try {
+			if (freemem() < 1.5 * 1024 * 1024 * 1024) {
+				return true;
+			}
+		} catch {
+			// Ignore memory check errors
+		}
+	}
+	return false;
+}
+
 export function shouldStartDaemonEarly(args: readonly string[], startupBenchmark: boolean): boolean {
-	if (startupBenchmark) {
+	if (startupBenchmark || isLightweightRequested(args)) {
 		return false;
 	}
 	const modeIndex = args.indexOf("--mode");
