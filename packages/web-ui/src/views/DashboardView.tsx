@@ -19,15 +19,30 @@ const VERDICT_COLOR: Record<RunStats["lastVerdict"], string> = {
 	"—": "text-term-dim",
 };
 
-function StatTile({ label, value, tone, onClick }: { readonly label: string; readonly value: string; readonly tone?: string; readonly onClick?: () => void }) {
+function StatTile({
+	label,
+	value,
+	tone,
+	onClick,
+	index,
+}: {
+	readonly label: string;
+	readonly value: string;
+	readonly tone?: string;
+	readonly onClick?: () => void;
+	readonly index: number;
+}) {
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			className="pq-frame flex flex-col items-start gap-1 px-4 py-3 text-left transition-colors hover:bg-term-raised"
+			className="pq-frame pq-rise flex flex-col items-start gap-1.5 rounded-[10px] px-4 py-3.5 text-left"
+			style={{ animationDelay: `${index * 60}ms` }}
 		>
-			<span className="text-[9px] uppercase tracking-widest text-term-dim">{label}</span>
-			<span className={`text-2xl font-bold ${tone ?? "text-term-fg"}`}>{value}</span>
+			<span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-term-dim">{label}</span>
+			<span className={`text-[26px] font-semibold leading-none tracking-tight tabular-nums ${tone ?? "text-term-fg"}`}>
+				{value}
+			</span>
 		</button>
 	);
 }
@@ -56,26 +71,28 @@ export function DashboardView() {
 	const recentErrors = errors.slice(-3).reverse();
 
 	return (
-		<div className="pq-grid-bg min-h-0 flex-1 overflow-y-auto p-4">
-			<div className="pq-view-in mx-auto max-w-5xl space-y-4">
+		<div className="pq-grid-bg min-h-0 flex-1 overflow-y-auto p-5">
+			<div className="mx-auto max-w-5xl space-y-4">
 				<div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-					<StatTile label="orchestrator" value={agentState ?? "—"} onClick={() => navigate("rooms")} />
+					<StatTile label="orchestrator" value={agentState ?? "—"} onClick={() => navigate("rooms")} index={0} />
 					<StatTile
 						label="mt5 feed"
 						value={mt5.status}
 						tone={mt5.status === "ok" ? "text-term-accent" : mt5.status === "down" ? "text-term-red" : "text-term-dim"}
+						index={1}
 					/>
-					<StatTile label="live agents" value={`${runningAgents}`} onClick={() => navigate("agents")} />
+					<StatTile label="live agents" value={`${runningAgents}`} onClick={() => navigate("agents")} index={2} />
 					<StatTile
 						label="pipeline runs"
 						value={`${stats.runs}`}
 						tone={VERDICT_COLOR[stats.lastVerdict]}
 						onClick={() => navigate("bots")}
+						index={3}
 					/>
 				</div>
 
 				<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-					<section className="pq-frame flex min-h-[180px] flex-col p-4">
+					<section className="pq-frame pq-rise flex min-h-[180px] flex-col p-4" style={{ animationDelay: "240ms" }}>
 						<span className="text-[9px] uppercase tracking-widest text-term-dim">latest tearsheet</span>
 						{latestSheet ? (
 							<a
@@ -97,7 +114,7 @@ export function DashboardView() {
 						</div>
 					</section>
 
-					<section className="pq-frame flex min-h-[180px] flex-col p-4">
+					<section className="pq-frame pq-rise flex min-h-[180px] flex-col p-4" style={{ animationDelay: "240ms" }}>
 						<span className="text-[9px] uppercase tracking-widest text-term-dim">recent quant cards</span>
 						{cardList.length === 0 ? (
 							<p className="mt-2 text-[11px] text-term-dim">cards appear here after backtests and validations.</p>
@@ -112,7 +129,7 @@ export function DashboardView() {
 				</div>
 
 				{recentErrors.length > 0 ? (
-					<section className="pq-frame p-4">
+					<section className="pq-frame pq-rise p-4" style={{ animationDelay: "300ms" }}>
 						<span className="text-[9px] uppercase tracking-widest text-term-dim">recent errors</span>
 						<ul className="mt-2 space-y-1">
 							{recentErrors.map((error, index) => (
