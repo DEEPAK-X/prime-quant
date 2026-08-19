@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added `install.ps1`, the Windows installer: clones or updates the product into `%USERPROFILE%\.primequant\repo`, runs `npm ci` and the bundle build, registers a thin `primequant` shim on the user PATH, and verifies it. `docs/windows.md` leads with the installer; checksum/download parity arrives when the Windows smoke job uploads the bundle artifact.
 - Rebranded the product to PRIME QUANT via a  name/configDir declaration ( binary alias alongside , config dir ), with a one-time startup migration that atomically renames a legacy  tree.
 - Added lightweight launch mode and flags (`--lightweight`, `--no-daemon`, `--no-animations`) to bypass daemon startup and animations when resources are constrained.
 - Added an animated startup progress indicator for interactive CLI launches to provide real-time feedback during initialization.

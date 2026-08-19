@@ -30,6 +30,23 @@ Launch the web GUI (Vite dev server + backend bridge) from the TUI with `/gui`, 
 
 The GUI is a source-checkout-only feature — run it from the monorepo root (where `packages/web-ui` lives), not from an installed package.
 
+## Install (Recommended)
+
+From any PowerShell session (no repo clone needed):
+
+```powershell
+powershell -NoProfile install.ps1
+```
+
+The installer clones the product into `%USERPROFILE%\.primequant\repo`,
+installs dependencies, builds the bundle, registers a thin `primequant`
+shim on your user PATH, and verifies it. Subsequent terminals get the
+`primequant` command from any project folder. It re-runs safely (updates
+an existing clone). When CI artifacts are wired for upload, this becomes
+a pure download + checksum-verify installer — no local build.
+
+---
+
 ## Fast Startup (Recommended)
 
 `npm run tui` is the development path: it runs the CLI through `tsx`, and the CLI, background daemon, session worker, and catalog process each transpile the full TypeScript monorepo independently. On machines with 8 GB RAM and real-time antivirus scanning this multiplies into minutes of apparent hanging on first launch.
