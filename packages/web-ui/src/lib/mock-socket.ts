@@ -38,6 +38,8 @@ export class MockSocket {
 			this.readyState = OPEN;
 			this.onopen?.call(this, new Event("open"));
 			this.emit(HELLO);
+			for (const event of SEEDED_SUBAGENTS) this.emit(event);
+			this.emit(SEEDED_MENTION);
 		}, 20);
 	}
 
@@ -89,6 +91,36 @@ const HELLO: ServerEvent = {
 		detail: { server: "XMGlobal-MT5 6", login: 1301549953, symbols: 1640 },
 		checkedAt: "2026-08-17T12:00:00Z",
 	},
+};
+
+/** Two live sub-agents so the command rail and Agents view render offline. */
+const SEEDED_SUBAGENTS: ServerEvent[] = [
+	{
+		type: "subagent",
+		id: "sub-risk-watcher",
+		name: "watcher://risk",
+		tier: "watcher",
+		status: "RUNNING",
+		tokensPerMin: 2100,
+		task: "daily-loss guard, 1% equity limit",
+	},
+	{
+		type: "subagent",
+		id: "sub-flow-watcher",
+		name: "watcher://flow",
+		tier: "watcher",
+		status: "RUNNING",
+		tokensPerMin: 3400,
+		task: "volume anomaly scan, EURUSD M15",
+	},
+];
+
+const SEEDED_MENTION: ServerEvent = {
+	type: "chat",
+	role: "assistant",
+	id: "seed-mention",
+	text: "@You risk watcher is live. Daily-loss guard armed at 1% equity — I will flag here on breach.",
+	ts: "2026-08-17T12:00:00Z",
 };
 
 const NOW = () => new Date().toISOString();

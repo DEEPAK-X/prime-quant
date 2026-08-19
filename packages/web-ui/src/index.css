@@ -2,15 +2,16 @@
 
 @theme {
 	--font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	--color-term-bg: #0d1117;
-	--color-term-panel: #161b22;
-	--color-term-border: #2d3748;
-	--color-term-fg: #c9d1d9;
-	--color-term-dim: #8b949e;
-	--color-term-accent: #58a6ff;
-	--color-term-green: #3fb950;
-	--color-term-red: #f85149;
-	--color-term-yellow: #d29922;
+	--color-term-bg: #05070a;
+	--color-term-panel: #0a0e13;
+	--color-term-raised: #10161d;
+	--color-term-border: #1e2732;
+	--color-term-fg: #d3dce5;
+	--color-term-dim: #69798a;
+	--color-term-accent: #46e0a4;
+	--color-term-green: #3fbf5f;
+	--color-term-red: #f0574f;
+	--color-term-yellow: #e0a83c;
 	--color-term-purple: #d2a8ff;
 	--radius-term-card: 6px;
 	--radius-term-pane: 10px;
@@ -95,6 +96,85 @@ body {
 :focus-visible {
 	outline: 1px solid var(--color-term-accent);
 	outline-offset: 1px;
+}
+
+/* --- OS shell: command-center chrome --- */
+
+/* Dot-grid texture behind the main view area. */
+.pq-grid-bg {
+	background-image: radial-gradient(circle, rgba(105, 121, 138, 0.14) 1px, transparent 1px);
+	background-size: 22px 22px;
+}
+
+/* Panel with corner ticks, like a dealing-terminal frame. */
+.pq-frame {
+	position: relative;
+	border: 1px solid var(--color-term-border);
+	background: var(--color-term-panel);
+}
+.pq-frame::before,
+.pq-frame::after {
+	content: "";
+	position: absolute;
+	width: 7px;
+	height: 7px;
+	pointer-events: none;
+}
+.pq-frame::before {
+	top: -1px;
+	left: -1px;
+	border-top: 1px solid var(--color-term-accent);
+	border-left: 1px solid var(--color-term-accent);
+}
+.pq-frame::after {
+	bottom: -1px;
+	right: -1px;
+	border-bottom: 1px solid var(--color-term-accent);
+	border-right: 1px solid var(--color-term-accent);
+}
+
+/* View-switch reveal: fast fade+rise, no layout shift. */
+@keyframes pq-view-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+.pq-view-in {
+	animation: pq-view-in 160ms ease-out;
+}
+
+/* Live status dot pulse (agents online, ws open). */
+@keyframes pq-dot-pulse {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 rgba(70, 224, 164, 0.45);
+	}
+	50% {
+		box-shadow: 0 0 0 4px rgba(70, 224, 164, 0);
+	}
+}
+.pq-dot-live {
+	animation: pq-dot-pulse 2.4s ease-out infinite;
+}
+
+/* Faint top scanline glow on the status bar. */
+.pq-statusbar {
+	background:
+		linear-gradient(180deg, rgba(70, 224, 164, 0.05), transparent 60%),
+		var(--color-term-panel);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pq-view-in,
+	.pq-dot-live,
+	.term-cursor {
+		animation: none;
+	}
 }
 
 /* Markdown body styling for assistant messages. */

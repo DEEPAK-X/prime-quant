@@ -1,25 +1,33 @@
 import { useEffect, useState } from "react";
-import { ArtifactPaneConnected } from "./components/ArtifactPane";
-import { ChatPaneConnected } from "./components/ChatPane";
+import { CommandRail } from "./components/CommandRail";
 import { Sidebar } from "./components/Sidebar";
 import { StatusToasts } from "./components/StatusToasts";
 import { TopBar } from "./components/TopBar";
+import { useHashRoute } from "./lib/navigation";
 import { QuantStoreProvider, useQuantStore } from "./lib/store";
+import { AgentsView } from "./views/AgentsView";
+import { BotsView } from "./views/BotsView";
+import { DashboardView } from "./views/DashboardView";
+import { PlaceholderView } from "./views/PlaceholderView";
+import { RoomsView } from "./views/RoomsView";
+import { TrainingView } from "./views/TrainingView";
 
-const ARTIFACT_PANE_KEY = "primequant.artifactPaneOpen";
+const RAIL_KEY = "primequant.commandRailOpen";
 const NARROW_BREAKPOINT = 1024;
 
-function readArtifactPaneOpen(): boolean {
+function readRailOpen(): boolean {
 	try {
-		return window.localStorage.getItem(ARTIFACT_PANE_KEY) !== "0";
+		return window.localStorage.getItem(RAIL_KEY) !== "0";
 	} catch {
 		return true;
 	}
 }
 
 function Shell() {
-	const { sessionId, messages, steps, tearsheets, protocol, demo, agentState, mt5, connection, errors } = useQuantStore();
-	const [artifactPaneOpen, setArtifactPaneOpen] = useState<boolean>(readArtifactPaneOpen);
+	const { protocol, demo, agentState, mt5, connection, errors, messages, subagents, artifacts, tearsheets, backend, refreshMt5 } =
+		useQuantStore();
+	const view = useHashRoute();
+	const [railOpen, setRailOpen] = useState<boolean>(readRailOpen);
 	const [narrow, setNarrow] = useState<boolean>(() =>
 		typeof window === "undefined" ? false : window.innerWidth < NARROW_BREAKPOINT,
 	);
@@ -32,13 +40,13 @@ function Shell() {
 
 	useEffect(() => {
 		try {
-			window.localStorage.setItem(ARTIFACT_PANE_KEY, artifactPaneOpen ? "1" : "0");
+			window.localStorage.setItem(RAIL_KEY, railOpen ? "1" : "0");
 		} catch {
 			// localStorage unavailable (private mode); persistence is best-effort.
 		}
-	}, [artifactPaneOpen]);
+	}, [railOpen]);
 
-	const showArtifacts = artifactPaneOpen && !narrow;
+	const showRail = railOpen && !narrow;
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
@@ -48,19 +56,25 @@ function Shell() {
 				agentState={agentState}
 				mt5={mt5}
 				connection={connection}
-				artifactPaneOpen={showArtifacts}
-				onToggleArtifactPane={() => setArtifactPaneOpen((open) => !open)}
+				railOpen={showRail}
+				onToggleRail={() => setRailOpen((open) => !open)}
+				onRefreshMt5={refreshMt5}
 			/>
 			<StatusToasts errors={errors} connection={connection} />
 			<div className="flex min-h-0 flex-1">
-				<Sidebar sessionId={sessionId} messages={messages} steps={steps} tearsheets={tearsheets} />
-				<main className="flex min-w-0 flex-1 flex-col border-r border-term-border">
-					<ChatPaneConnected />
+				<Sidebar view={view} backend={backend} demo={demo} subagents={subagents} />
+				<main className="flex min-w-0 flex-1 flex-col">
+					{view === "dashboard" ? <DashboardView /> : null}
+					{view === "agents" ? <AgentsView /> : null}
+					{view === "rooms" ? <RoomsView /> : null}
+					{view === "bots" ? <BotsView /> : null}
+					{view === "training" ? <TrainingView /> : null}
+					{view === "knowledge" || view === "tasks" || view === "logs" || view === "settings" ? (
+						<PlaceholderView view={view} />
+					) : null}
 				</main>
-				{showArtifacts ? (
-					<aside className="flex w-[420px] min-w-[360px] flex-col">
-						<ArtifactPaneConnected />
-					</aside>
+				{showRail ? (
+					<CommandRail subagents={subagents} messages={messages} artifacts={artifacts} tearsheets={tearsheets} />
 				) : null}
 			</div>
 		</div>

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Reworked the GUI into the PRIME QUANT OS shell: a left nav rail (Dashboard, Agents, Rooms, Trading Bots, Training Room, and M2+ placeholders), a top status bar (mode badge, agent state, MT5 pill with click-to-reprobe, WS state, live clock, rail toggle), and a right command rail (agents online, mentions, shared files, pinned). Hash-based view routing (`#/rooms`, `#/dashboard`, ...) so refresh and back/forward keep the view.
+- Added a Dashboard view (system tiles, latest tearsheet, recent quant cards, recent errors), an Agents view (virtualized roster table), a Trading Bots view (tearsheet, pipeline, artifacts, report history), a Training Room view (optimize/CPCV activity and validation-gate verdicts), and honest milestone-marked placeholders for Knowledge Base, Tasks, Logs, and Settings. The old artifact pane was split across these views; `ArtifactPane.tsx` and `SubagentList.tsx` were removed.
+- Retuned the theme to a deep command-center palette (near-black background, mint signal accent) with dot-grid backdrop, corner-tick panel frames, view-switch reveal, and a live status-dot pulse; all animations respect `prefers-reduced-motion`.
+- Added `VirtualRows` (fixed-row-height viewport windowing) for large uniform lists; chat stays bounded by the existing 200-message cap.
+- Seeded the `?mock=1` offline replay with two watcher sub-agents and a mention so the command rail and Agents view render without a backend.
+- Changed the page title to "PRIME QUANT OS".
 - Added `StatusToasts.tsx`: a persistent red fatal `error` banner under the topbar, transient auto-dismissing non-fatal error toasts, and a reconnect toast when the WebSocket drops after having been open.
 - Added Ctrl/Cmd+Enter as an additional composer send binding and Esc as an interrupt (stop) binding while the agent is busy; the stop button and textarea gained `aria-label`s and the placeholder hints the Esc-to-stop shortcut.
 - Added `aria-label`s to the tearsheet reload/open controls and the QuantCard raw-payload toggle, and `role="tab"`/`aria-selected` to the artifact-pane and file-kind tab bars for keyboard a11y.
