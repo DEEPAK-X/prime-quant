@@ -45,6 +45,27 @@ export interface HelloEvent {
 	readonly agentState: AgentState;
 	readonly sessionId: string | null;
 	readonly mt5: Mt5State;
+	/** A2 rooms: known room ids at connect time. */
+	readonly rooms?: string[];
+}
+
+export interface RoomInfo {
+	readonly id: string;
+	readonly topic: string;
+}
+
+export interface RoomsStateEvent {
+	readonly type: "rooms_state";
+	readonly rooms: RoomInfo[];
+}
+
+export interface RoomMessageEvent {
+	readonly type: "room_message";
+	readonly room: string;
+	readonly id: string;
+	readonly from: string;
+	readonly text: string;
+	readonly ts: string;
 }
 
 export interface AgentStateEvent {
@@ -140,6 +161,8 @@ export interface ErrorEvent {
 export type ServerEvent =
 	| HelloEvent
 	| AgentStateEvent
+	| RoomsStateEvent
+	| RoomMessageEvent
 	| ChatEvent
 	| ChatDeltaEvent
 	| ThinkingEvent
@@ -154,7 +177,8 @@ export type ServerEvent =
 export type ClientMessage =
 	| { readonly type: "chat"; readonly text: string }
 	| { readonly type: "interrupt" }
-	| { readonly type: "refresh_mt5" };
+	| { readonly type: "refresh_mt5" }
+	| { readonly type: "subscribe"; readonly rooms: string[] | null };
 
 export interface ArtifactStore {
 	readonly py: ArtifactEvent[];
@@ -181,6 +205,10 @@ export function isServerEvent(value: unknown): value is ServerEvent {
 			return event.protocol === 1 || event.protocol === 2;
 		case "agent_state":
 			return typeof event.state === "string";
+		case "rooms_state":
+			return Array.isArray(event.rooms);
+		case "room_message":
+			return typeof event.room === "string" && typeof event.id === "string" && typeof event.text === "string";
 		case "chat":
 			return event.role === "user" || event.role === "assistant";
 		case "chat_delta":

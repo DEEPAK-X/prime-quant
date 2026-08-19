@@ -24,8 +24,21 @@ function readRailOpen(): boolean {
 }
 
 function Shell() {
-	const { protocol, demo, agentState, mt5, connection, errors, messages, subagents, artifacts, tearsheets, backend, refreshMt5 } =
-		useQuantStore();
+	const {
+		protocol,
+		demo,
+		agentState,
+		mt5,
+		connection,
+		errors,
+		messages,
+		roomMessages,
+		subagents,
+		artifacts,
+		tearsheets,
+		backend,
+		refreshMt5,
+	} = useQuantStore();
 	const view = useHashRoute();
 	const [railOpen, setRailOpen] = useState<boolean>(readRailOpen);
 	const [narrow, setNarrow] = useState<boolean>(() =>
@@ -74,7 +87,13 @@ function Shell() {
 					) : null}
 				</main>
 				{showRail ? (
-					<CommandRail subagents={subagents} messages={messages} artifacts={artifacts} tearsheets={tearsheets} />
+					<CommandRail
+						subagents={subagents}
+						messages={messages}
+						roomMessages={roomMessages}
+						artifacts={artifacts}
+						tearsheets={tearsheets}
+					/>
 				) : null}
 			</div>
 		</div>

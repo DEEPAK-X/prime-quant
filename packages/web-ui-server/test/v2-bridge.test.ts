@@ -118,7 +118,7 @@ describe("v2 bridge: hello frame, broadcasts, and REST snapshots", () => {
 		await start();
 		const socket = await openSocket(port);
 		await socket.waitFor(1); // hello
-		const messagesPromise = socket.waitFor(4); // hello + 3 emitted
+		const messagesPromise = socket.waitFor(5); // hello + rooms_state + 3 emitted
 
 		bridge!.emit({ type: "agent_state", state: "ready" });
 		bridge!.emit({ type: "subagent", id: "sub-1", tier: "worker", status: "RUNNING", task: "param sweep" });
@@ -128,6 +128,7 @@ describe("v2 bridge: hello frame, broadcasts, and REST snapshots", () => {
 		socket.ws.close();
 		expect(messages.map((message) => (message as V2Event).type)).toEqual([
 			"hello",
+			"rooms_state",
 			"agent_state",
 			"subagent",
 			"artifact",
@@ -181,7 +182,7 @@ describe("v2 bridge: hello frame, broadcasts, and REST snapshots", () => {
 
 		socket.ws.send(JSON.stringify({ type: "chat", text: "  Analyse EURUSD M5  " }));
 		socket.ws.send(JSON.stringify({ type: "interrupt" }));
-		const refreshPromise = socket.waitFor(2); // the refreshed hello
+		const refreshPromise = socket.waitFor(3); // hello + rooms_state + the refreshed hello
 		socket.ws.send(JSON.stringify({ type: "refresh_mt5" }));
 
 		const messages = await refreshPromise;
@@ -189,7 +190,7 @@ describe("v2 bridge: hello frame, broadcasts, and REST snapshots", () => {
 		expect(session.prompt).toHaveBeenCalledWith("Analyse EURUSD M5");
 		expect(session.interrupt).toHaveBeenCalledTimes(1);
 		expect(mt5.refreshCount).toBe(1);
-		expect(messages[1]).toMatchObject({ type: "hello", mt5: { status: "ok" } });
+		expect(messages[2]).toMatchObject({ type: "hello", mt5: { status: "ok" } });
 	});
 
 	it("serves reports from the root and rejects traversal and separators", async () => {

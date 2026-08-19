@@ -2,8 +2,10 @@
  * GUI v2 contract event types (docs/gui-wiring/02-api-contract.md).
  *
  * These are the lowercase wire events broadcast over WS `/ws` and served
- * through the REST snapshot endpoints. The contract is frozen: do not extend
- * these shapes without written agreement from both agents.
+ * through the REST snapshot endpoints. Extensions are agreed in PLAN.md and
+ * recorded in docs/gui-wiring/02-api-contract.md: the A2 rooms model adds
+ * `room_message` and `rooms_state`, which older GUIs drop silently (their
+ * `isServerEvent` guard ignores unknown event types).
  */
 
 export type AgentState = "starting" | "ready" | "busy" | "error" | "stopped";
@@ -30,8 +32,12 @@ export type V2Event =
 			agentState: AgentState;
 			sessionId: string | null;
 			mt5: Mt5Status;
+			/** A2 rooms: known room ids at connect time. */
+			rooms?: string[];
 	  }
 	| { type: "agent_state"; state: AgentState; detail?: string }
+	| { type: "rooms_state"; rooms: Array<{ id: string; topic: string }> }
+	| { type: "room_message"; room: string; id: string; from: string; text: string; ts: string }
 	| { type: "chat"; role: "user" | "assistant"; text: string; id: string; ts: string }
 	| { type: "chat_delta"; id: string; delta: string }
 	| { type: "thinking"; id: string; delta: string; done: boolean }

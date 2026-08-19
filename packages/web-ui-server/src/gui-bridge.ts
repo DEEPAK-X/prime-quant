@@ -30,6 +30,7 @@ import { isAbsolute, resolve as pathResolve, relative } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 
 import type { AgentState, Mt5Status, V2Event } from "./events.js";
+import { isValidRoomId, type RoomMessage, RoomsRegistry } from "./rooms.js";
 import { safeReportName } from "./tearsheets.js";
 
 export const DEFAULT_PORT = 3001;
@@ -324,6 +325,8 @@ export interface V2GuiBridgeOptions {
 	sessionId: string | null;
 	/** Repo root — `/reports/` files are served from here (traversal-safe). */
 	artifactsRoot: string;
+	/** A2 rooms registry (defaults to the PLAN.md room set). */
+	rooms?: RoomsRegistry;
 	log?: (message: string) => void;
 }
 
@@ -350,8 +353,12 @@ export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
 	const host = options.host ?? DEFAULT_HOST;
 	const server = options.server ?? createServer();
 	const wss = new WebSocketServer({ noServer: true });
+	// Per-client room subscriptions (A2). Absent/null means "all rooms" so
+	// older clients that never send `subscribe` receive every room_message.
+	const subscriptions = new Map<WebSocket, Set<string> | null>();
 	const clients = new Set<WebSocket>();
 	const log = options.log ?? (() => {});
+	const rooms = options.rooms ?? new RoomsRegistry();
 
 	const store = {
 		agentState: "starting" as AgentState,
@@ -386,12 +393,27 @@ export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
 		}
 	};
 
+	const acceptsRoom = (ws: WebSocket, room: string): boolean => {
+		const sub = subscriptions.get(ws);
+		return sub === undefined || sub === null || sub.has(room);
+	};
+
 	const emit = (event: V2Event): void => {
 		applyEvent(event);
 		const text = JSON.stringify(event);
+		const room = event.type === "room_message" ? event.room : null;
 		for (const client of clients) {
-			if (client.readyState === WS_OPEN) client.send(text);
+			if (client.readyState === WS_OPEN && (room === null || acceptsRoom(client, room))) client.send(text);
 		}
+	};
+
+	/** Watcher intake: store + broadcast a room message. */
+	const postRoomMessage = (room: string, from: string, text: string): RoomMessage | null => {
+		const message = rooms.post(room, from, text);
+		if (message) {
+			emit({ type: "room_message", ...message });
+		}
+		return message;
 	};
 
 	const sendHello = (ws: WebSocket, mt5: Mt5Status): void => {
@@ -403,15 +425,20 @@ export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
 				agentState: store.agentState,
 				sessionId: options.sessionId,
 				mt5,
+				rooms: rooms.list().map((room) => room.id),
 			} satisfies V2Event),
 		);
+		ws.send(JSON.stringify({ type: "rooms_state", rooms: rooms.list() } satisfies V2Event));
 	};
 
 	server.on("upgrade", (req, socket, head) => {
 		if (req.url === "/ws") {
 			wss.handleUpgrade(req, socket, head, (ws) => {
 				clients.add(ws);
-				ws.on("close", () => clients.delete(ws));
+				ws.on("close", () => {
+					clients.delete(ws);
+					subscriptions.delete(ws);
+				});
 				// First frame is always `hello` (contract §1.1); probe MT5 once.
 				void options.mt5
 					.getStatus()
@@ -464,6 +491,19 @@ export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
 									log(`[bridge] mt5 refresh failed: ${String(error)}`);
 								});
 							break;
+						case "subscribe": {
+							// A2 rooms: narrow this client's room_message feed. `null`
+							// (or a missing rooms field) restores the all-rooms default.
+							if (record.rooms === null || record.rooms === undefined) {
+								subscriptions.set(ws, null);
+							} else if (Array.isArray(record.rooms)) {
+								const ids = record.rooms.filter(
+									(id): id is string => typeof id === "string" && isValidRoomId(id),
+								);
+								subscriptions.set(ws, new Set(ids));
+							}
+							break;
+						}
 						default:
 							break;
 					}
@@ -530,6 +570,41 @@ export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
 				sendJson(res, 200, { status: "unknown", detail: null, checkedAt: null });
 			}
 			return;
+		}
+
+		// A2 rooms: list, per-room history, and watcher intake.
+		if (path === "/api/rooms") {
+			if (method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+			sendJson(res, 200, {
+				rooms: rooms.list().map((room) => ({ ...room, messages: rooms.history(room.id).length })),
+			});
+			return;
+		}
+
+		const roomMatch = /^\/api\/rooms\/([a-z0-9][a-z0-9-]{0,31})\/messages?$/.exec(path);
+		if (roomMatch) {
+			const roomId = roomMatch[1];
+			if (method === "GET") {
+				if (!rooms.has(roomId)) return sendJson(res, 404, { error: "unknown room" });
+				sendJson(res, 200, { room: roomId, messages: rooms.history(roomId) });
+				return;
+			}
+			if (method === "POST") {
+				let parsed: { from?: unknown; text?: unknown } | undefined;
+				try {
+					parsed = JSON.parse(await readBody(req)) as { from?: unknown; text?: unknown };
+				} catch {
+					return sendJson(res, 400, { error: "invalid JSON body" });
+				}
+				const message =
+					typeof parsed?.from === "string" && typeof parsed?.text === "string"
+						? postRoomMessage(roomId, parsed.from, parsed.text)
+						: null;
+				if (!message) return sendJson(res, 400, { error: "from and text are required" });
+				sendJson(res, 201, { message });
+				return;
+			}
+			return sendJson(res, 405, { error: "method not allowed" });
 		}
 
 		if (method === "GET" && path.startsWith("/reports/")) {

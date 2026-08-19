@@ -216,3 +216,56 @@ truth, REST snapshots are conveniences for initial paint / reconnect merge.
 - runs unchanged against it (v1 events still render),
 - hides MT5 status, streaming cursors, and thinking accordions,
 - shows a "DEMO" badge when no `hello.protocol === 2` arrives within 2 s.
+
+---
+
+## 6. Amendment: rooms (A2, agreed in PLAN.md)
+
+The rooms model adds named message channels beside the orchestrator chat
+(`#general` remains the existing `chat` stream; watcher agents post into the
+other rooms). Backward compatible: older GUIs drop the new frames via their
+`isServerEvent` guard; clients that never send `subscribe` receive all room
+traffic, so nothing changes for existing connections.
+
+### 6.1 `hello` extension
+
+`hello` gains an optional `rooms: string[]` field listing known room ids at
+connect time.
+
+### 6.2 `rooms_state` (server → client, sent right after `hello`)
+
+```json
+{ "type": "rooms_state", "rooms": [{ "id": "alerts", "topic": "breaches and urgent watcher flags" }] }
+```
+
+Default rooms (PLAN.md): `general`, `alerts`, `risk-management`, `research`,
+`system-updates`. Valid ids match `^[a-z0-9][a-z0-9-]{0,31}$`; unknown but
+valid ids are created on first post.
+
+### 6.3 `room_message` (server → client)
+
+```json
+{ "type": "room_message", "room": "risk-management", "id": "rm-7", "from": "watcher://risk", "text": "…", "ts": "…" }
+```
+
+Broadcast only to clients whose subscription includes the room (see 6.5).
+Room logs are bounded at 200 messages per room server-side; GUIs should apply
+the same cap client-side.
+
+### 6.4 REST surface
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/rooms` | `{ "rooms": [{ "id", "topic", "messages": <count> }] }` |
+| GET | `/api/rooms/:id/messages` | `{ "room", "messages": [room_message…] }`, 404 for unknown rooms |
+| POST | `/api/rooms/:id/messages` | Watcher intake. Body `{ "from", "text" }`; stores, broadcasts `room_message`, returns 201 `{ "message" }`. 400 for missing/invalid fields |
+
+### 6.5 `subscribe` (client → server, WS)
+
+```json
+{ "type": "subscribe", "rooms": ["alerts", "research"] }
+```
+
+Narrows this client's `room_message` feed to the listed rooms. Sending
+`"rooms": null` (or omitting `rooms`) restores the all-rooms default. Only
+valid room ids are accepted; invalid entries are dropped silently.

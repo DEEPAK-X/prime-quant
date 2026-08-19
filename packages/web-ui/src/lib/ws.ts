@@ -29,6 +29,8 @@ import {
 	isServerEvent,
 	type Mt5State,
 	type Protocol,
+	type RoomInfo,
+	type RoomMessageEvent,
 	type ServerEvent,
 	type StepEvent,
 	type SubagentEvent,
@@ -38,7 +40,14 @@ import {
 } from "./contract";
 import type { MockSocket } from "./mock-socket";
 import { createMockSocket, shouldUseMockSocket } from "./mock-socket";
-import { applyChat, applyChatDelta, applyThinking, type ChatMessage, type ThinkingBlock } from "./reducer";
+import {
+	applyChat,
+	applyChatDelta,
+	applyThinking,
+	type ChatMessage,
+	MAX_MESSAGES,
+	type ThinkingBlock,
+} from "./reducer";
 
 /** Transport surface both the real WebSocket and MockSocket satisfy. */
 type SocketTransport = WebSocket | MockSocket;
@@ -65,6 +74,9 @@ export type {
 	Mt5Detail,
 	Mt5State,
 	Protocol,
+	RoomInfo,
+	RoomMessageEvent,
+	RoomsStateEvent,
 	ServerEvent,
 	StepEvent,
 	StepStatus,
@@ -118,6 +130,14 @@ interface TearsheetsResponse {
 	tearsheets?: TearsheetEntry[];
 }
 
+interface RoomsResponse {
+	rooms?: RoomInfo[];
+}
+
+interface RoomMessagesResponse {
+	messages?: RoomMessageEvent[];
+}
+
 interface HealthResponse {
 	ok?: boolean;
 	backend?: string;
@@ -149,6 +169,8 @@ export interface QuantSocket {
 	tearsheets: TearsheetEntry[];
 	tearsheetUrl: string | null;
 	artifacts: ArtifactStore;
+	rooms: RoomInfo[];
+	roomMessages: Record<string, RoomMessageEvent[]>;
 	errors: QuantError[];
 	sendMessage: (text: string) => void;
 	interrupt: () => void;
@@ -177,6 +199,8 @@ export function useQuantSocket(): QuantSocket {
 	const [tearsheets, setTearsheets] = useState<TearsheetEntry[]>([]);
 	const [tearsheetUrl, setTearsheetUrl] = useState<string | null>(null);
 	const [artifacts, setArtifacts] = useState<ArtifactStore>(emptyArtifactStore());
+	const [rooms, setRooms] = useState<RoomInfo[]>([]);
+	const [roomMessages, setRoomMessages] = useState<Record<string, RoomMessageEvent[]>>({});
 	const [errors, setErrors] = useState<QuantError[]>([]);
 	const socketRef = useRef<SocketTransport | null>(null);
 
@@ -237,6 +261,18 @@ export function useQuantSocket(): QuantSocket {
 					break;
 				case "agent_state":
 					setAgentState(payload.state);
+					break;
+				case "rooms_state":
+					setRooms(payload.rooms);
+					break;
+				case "room_message":
+					setRooms((prev) =>
+						prev.some((room) => room.id === payload.room) ? prev : [...prev, { id: payload.room, topic: "" }],
+					);
+					setRoomMessages((prev) => {
+						const log = [...(prev[payload.room] ?? []), payload];
+						return { ...prev, [payload.room]: log.slice(-MAX_MESSAGES) };
+					});
 					break;
 				case "chat":
 					setMessages((prev) => applyChat(prev, payload));
@@ -345,6 +381,20 @@ export function useQuantSocket(): QuantSocket {
 					if (disposed || !data) return;
 					setMt5(data);
 				});
+				void fetchJson<RoomsResponse>("/rooms").then((data) => {
+					if (disposed || !data?.rooms) return;
+					const list = data.rooms;
+					setRooms((prev) => (prev.length > 0 ? prev : list));
+					for (const room of list) {
+						void fetchJson<RoomMessagesResponse>(`/rooms/${room.id}/messages`).then((history) => {
+							if (disposed || !history?.messages) return;
+							setRoomMessages((prev) => ({
+								...prev,
+								[room.id]: history.messages?.slice(-MAX_MESSAGES) ?? [],
+							}));
+						});
+					}
+				});
 			};
 
 			socket.onmessage = (event) => {
@@ -432,6 +482,8 @@ export function useQuantSocket(): QuantSocket {
 		tearsheets,
 		tearsheetUrl,
 		artifacts,
+		rooms,
+		roomMessages,
 		errors,
 		sendMessage,
 		interrupt,
