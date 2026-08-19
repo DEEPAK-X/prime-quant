@@ -127,7 +127,7 @@ export class PrimeOnboardingSplashComponent implements Component {
 		return [
 			{ text: "Welcome to ", tone: "text" },
 			{ text: "PRIME", tone: "text", bold: true },
-			{ text: " Agent", tone: "text", italic: true },
+			{ text: " QUANT", tone: "text", italic: true },
 		];
 	}
 

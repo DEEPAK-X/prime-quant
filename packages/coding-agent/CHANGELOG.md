@@ -9,6 +9,9 @@
 - Fixed directory fsync EPERM errors in command recovery journal and supervisor launch lock directory creation on Windows.
 - Fixed Windows console window flashing during Python kernel bootstrap and process start-time queries, and resolved daemon worker authentication timeouts.
 - Changed daemon catalog process startup timeout to 20 seconds to prevent premature timeouts during catalog initialization.
+- Changed the onboarding splash brand line from "PRIME Agent" to "PRIME QUANT".
+- Added `prime-quant.cmd` and `prime-quant.ps1` Windows launchers and a root `tui:dist` script that run the prebuilt bundle, avoiding the four-process `tsx` transpile that made `npm run tui` appear stuck on low-RAM Windows machines.
+- Expanded `docs/windows.md` with fast-startup instructions, first-run kernel bootstrap expectations, antivirus exclusions, and hang troubleshooting.
 
 - Added `rlm.quant.recall_failures(kind=None)`, the read counterpart to `refine_log_failure`: it recalls previously-logged quant failure patterns from `rlm.harness` memory and returns a compact `{count, failures, prompt_block}` card whose `prompt_block` summarizes the known dead-ends (ordered by recurrence) so the next strategy idea can avoid repeating them, closing the fail-and-refine loop.
 - Added `windowsHide: true` to all long-lived detached child spawns (daemon, owned-session worker, daemon-update restart coordinator, GUI orchestrator, Python fork server, and ipykernel launcher) so no console window flashes on Windows when these start in the background.

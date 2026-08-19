@@ -13,15 +13,21 @@ MetaTrader 5 terminal.
 
 ## Quick Start
 
-```bash
+```powershell
 cd prime-quant          # this repo root
-npm install            # monorepo dependencies (one-time)
-npm run tui            # starts the coding-agent TUI
+.\prime-quant.cmd       # installs deps + builds the bundle on first run, then starts the TUI
 ```
 
-On first launch the TUI bootstraps a Python kernel venv automatically (~30 s):
-ipykernel, prime-agent-runtime, polars, numpy, optuna, MetaTrader5, and the
-quant skill bundle are all installed into `~/.prime/agent/kernel-venv/`.
+`prime-quant.cmd` (or `prime-quant.ps1`) runs the prebuilt bundle — the fast
+path. `npm run tui` is the development path: it transpiles the whole monorepo
+through `tsx` in four separate processes and can look stuck for minutes on an
+8 GB machine. See `packages/coding-agent/docs/windows.md` for details,
+antivirus exclusions, and troubleshooting.
+
+On first launch the TUI bootstraps a Python kernel venv automatically (one
+time, a few minutes): ipykernel, prime-agent-runtime, polars, numpy, optuna,
+MetaTrader5, and the quant skill bundle are all installed into
+`~/.prime/agent/kernel-venv/`.
 
 Inside the TUI:
 
