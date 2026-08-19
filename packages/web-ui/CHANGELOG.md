@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Upgraded the Training Room (A6): optimization runs as first-class objects with soft status badges and a validation-gate verdicts table (PASS/FAIL badge plus DSR, PBO, and OOS-degradation metrics) built from the shared ui.tsx primitives.
 - Implemented the Tasks view (A3): watcher preset catalog loaded from the quant skill bundle (title/summary/cron/prompt parsed server-side), one-click arm/cancel through the real prime-agent schedule CLI (one-shot execFile with windowsHide), active jobs listed from schedule list --json with server-computed next-run times, and last room cards per preset. The demo backend serves the same endpoints in-memory.
 - Reworked the Trading Bots view (A5): pipeline run history derived from step groups with status badges and timestamps, per-run step detail, the latest validation-gate verdict, and the tearsheet library; added lib/runs.ts and reused the ui.tsx primitives. Removed the now-unused PipelineView component.
 - Refined the OS shell into a full design system: Outfit for UI chrome with JetBrains Mono kept for data/code, a dark-elevation surface scale (bg → panel → raised → overlay), soft-alpha accent and status badges, rounded elevated cards with hover lift, grouped nav sections (Workspace / Monitor / System), a glass status bar with soft pills, count chips in the command rail, and staggered card entrance animations (all `prefers-reduced-motion` safe). Added shared `ui.tsx` primitives (Badge, Card, PageHeader, SectionHeader).

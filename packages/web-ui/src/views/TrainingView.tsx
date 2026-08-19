@@ -1,19 +1,39 @@
 /**
- * Training Room view: optimization and validation activity — Optuna runs
- * surface here as first-class objects in M3; today it renders the real
- * optimize/cpcv gate steps and validation verdicts already in the store.
+ * Training Room view (A6): optimization runs as first-class objects and a
+ * validation-gate metrics table. Everything is derived from the store —
+ * optimize/cpcv steps become run objects, gate cards become structured
+ * verdict rows (DSR / PBO / OOS degradation → PASS/FAIL).
  */
 import { useMemo } from "react";
+import { Badge, PageHeader, type Tone } from "../components/ui";
 import { useQuantStore } from "../lib/store";
-import type { StepEvent } from "../lib/ws";
+import type { CardEvent, StepEvent } from "../lib/ws";
 
-const STEP_TONE: Record<StepEvent["status"], string> = {
-	running: "text-term-accent",
-	done: "text-term-green",
-	error: "text-term-red",
-};
+const STEP_TONE: Record<StepEvent["status"], Tone> = { running: "accent", done: "green", error: "red" };
 
 const TRAINING_STEPS = new Set(["optimize", "cpcv_gate"]);
+
+function GateRow({ card }: { readonly card: CardEvent }) {
+	const gate = card.payload.validation_gate;
+	if (!gate) return null;
+	const passed = gate.passed === true;
+	const metrics = Object.entries(gate).filter(([key]) => key !== "passed");
+	return (
+		<div className="flex items-center gap-3 border-b border-term-border px-4 py-2.5 last:border-b-0">
+			<Badge tone={passed ? "green" : "red"}>{passed ? "PASS" : "FAIL"}</Badge>
+			<span className="min-w-0 flex-1 truncate text-[11px] font-medium text-term-fg" title={card.title}>
+				{card.title}
+			</span>
+			<span className="flex shrink-0 gap-3 text-[10px] text-term-dim">
+				{metrics.map(([key, value]) => (
+					<span key={key}>
+						{key.replaceAll("_", " ")} <span className="font-medium text-term-fg">{String(value)}</span>
+					</span>
+				))}
+			</span>
+		</div>
+	);
+}
 
 export function TrainingView() {
 	const { steps, cards } = useQuantStore();
@@ -32,46 +52,43 @@ export function TrainingView() {
 	);
 
 	return (
-		<div className="pq-grid-bg min-h-0 flex-1 overflow-y-auto p-4">
-			<div className="pq-view-in mx-auto max-w-4xl space-y-4">
-				<section className="pq-frame p-4">
-					<span className="text-[9px] uppercase tracking-widest text-term-dim">optimization runs</span>
+		<div className="pq-grid-bg min-h-0 flex-1 overflow-y-auto">
+			<PageHeader title="Training Room" description="optuna optimization runs and overfit gates" />
+			<div className="mx-auto max-w-4xl space-y-4 p-5">
+				<section className="pq-frame pq-rise rounded-[10px] p-4">
+					<h2 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-term-dim">optimization runs</h2>
 					{trainingSteps.length === 0 ? (
 						<p className="mt-2 text-[11px] text-term-dim">
 							no optimization activity yet — ask for an Optuna tune in Rooms, e.g. “optimize the sma periods with
 							optuna, 50 trials”.
 						</p>
 					) : (
-						<ul className="mt-2 space-y-1.5">
+						<ol className="mt-2 space-y-2">
 							{trainingSteps.map((step) => (
 								<li key={step.id} className="flex items-center gap-3 text-[11px]">
-									<span className={`w-16 uppercase ${STEP_TONE[step.status]}`}>{step.status}</span>
-									<span className="text-term-fg">{step.name}</span>
+									<Badge tone={STEP_TONE[step.status]}>{step.status}</Badge>
+									<span className="font-medium text-term-fg">{step.name}</span>
 									{step.detail ? <span className="truncate text-term-dim">{step.detail}</span> : null}
 								</li>
 							))}
-						</ul>
+						</ol>
 					)}
 				</section>
 
-				<section className="pq-frame p-4">
-					<span className="text-[9px] uppercase tracking-widest text-term-dim">validation gate verdicts</span>
+				<section className="pq-frame pq-rise rounded-[10px]" style={{ animationDelay: "120ms" }}>
+					<h2 className="px-4 pt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-term-dim">
+						validation gate verdicts <span className="text-term-fg">({gates.length})</span>
+					</h2>
 					{gates.length === 0 ? (
-						<p className="mt-2 text-[11px] text-term-dim">verdicts appear after a pipeline run passes through the CPCV gate.</p>
+						<p className="px-4 py-3 text-[11px] text-term-dim">
+							verdicts appear after a pipeline run passes through the CPCV gate.
+						</p>
 					) : (
-						<ul className="mt-2 space-y-1.5">
-							{gates.map((card) => {
-								const gate = card.payload.validation_gate;
-								return (
-									<li key={card.id} className="flex items-center gap-3 text-[11px]">
-										<span className={gate?.passed ? "text-term-accent" : "text-term-red"}>
-											{gate?.passed ? "PASS" : "FAIL"}
-										</span>
-										<span className="truncate text-term-fg">{card.title}</span>
-									</li>
-								);
-							})}
-						</ul>
+						<div className="mt-2 pb-1">
+							{gates.map((card) => (
+								<GateRow key={card.id} card={card} />
+							))}
+						</div>
 					)}
 				</section>
 			</div>
