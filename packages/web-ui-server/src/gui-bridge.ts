@@ -385,9 +385,16 @@ export function createV2GuiBridge(options: V2GuiBridgeOptions): V2GuiBridge {
 			case "artifact":
 				store.artifacts.set(`${event.kind}:${event.name}`, event);
 				break;
-			case "tearsheet":
-				store.tearsheets.set(event.name ?? event.url, event);
+			case "tearsheet": {
+				const key = event.name ?? event.url;
+				const isNew = !store.tearsheets.has(key);
+				store.tearsheets.set(key, event);
+				if (isNew) {
+					const label = event.name || event.url;
+					postRoomMessage("research", "pipeline", `Tearsheet generated: [${label}](${event.url})`);
+				}
 				break;
+			}
 			default:
 				break;
 		}

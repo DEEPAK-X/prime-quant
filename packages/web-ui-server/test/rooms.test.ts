@@ -196,4 +196,29 @@ describe("v2 bridge: rooms", () => {
 		const unknown = await fetch(`http://127.0.0.1:${current}/api/rooms/nope/messages`);
 		expect(unknown.status).toBe(404);
 	});
+
+	it("automatically posts tearsheet artifact link to #research room on pipeline completion", async () => {
+		const current = await start();
+		const socket = await openSocket(current);
+		await socket.waitForType("hello");
+
+		bridge?.emit({
+			type: "tearsheet",
+			name: "tearsheet_EURUSD_M5.html",
+			url: "/reports/tearsheet_EURUSD_M5.html",
+			ts: "2026-08-19T21:00:00Z",
+		});
+
+		const messageEvent = (await socket.waitForType("room_message")) as Extract<V2Event, { type: "room_message" }>;
+		expect(messageEvent.room).toBe("research");
+		expect(messageEvent.from).toBe("pipeline");
+		expect(messageEvent.text).toContain("[tearsheet_EURUSD_M5.html](/reports/tearsheet_EURUSD_M5.html)");
+
+		const res = await fetch(`http://127.0.0.1:${current}/api/rooms/research/messages`);
+		const history = (await res.json()) as { messages: Array<{ text: string; from: string }> };
+		expect(history.messages).toHaveLength(1);
+		expect(history.messages[0].from).toBe("pipeline");
+		expect(history.messages[0].text).toContain("tearsheet_EURUSD_M5.html");
+		socket.ws.close();
+	});
 });

@@ -18,6 +18,7 @@
 - Added granular kernel bootstrap progress stages (CPython uv download, virtualenv creation, engine, IPC, skills) in TUI status line and surfaced bootstrap log path on failure.
 - Added Windows CI smoke job on GitHub Actions verifying bundle CLI execution and pytest quant engine test suite.
 - Added EMA crossover (`EMAStrategy`) and Supertrend (`SupertrendStrategy`) reference strategies in `primequant.strategy` with AST lint and backtest test coverage.
+- Added automatic tearsheet notification dispatch posting artifact links into the `#research` room upon pipeline completion.
 
 - Added `rlm.quant.recall_failures(kind=None)`, the read counterpart to `refine_log_failure`: it recalls previously-logged quant failure patterns from `rlm.harness` memory and returns a compact `{count, failures, prompt_block}` card whose `prompt_block` summarizes the known dead-ends (ordered by recurrence) so the next strategy idea can avoid repeating them, closing the fail-and-refine loop.
 - Added `windowsHide: true` to all long-lived detached child spawns (daemon, owned-session worker, daemon-update restart coordinator, GUI orchestrator, Python fork server, and ipykernel launcher) so no console window flashes on Windows when these start in the background.

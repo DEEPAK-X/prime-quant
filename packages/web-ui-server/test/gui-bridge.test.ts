@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import {
@@ -192,8 +192,8 @@ describe("Phase 8A: web GUI bridge HTTP + WebSocket", () => {
 
 describe("resolveArtifactPath traversal guards", () => {
 	it("rejects traversal, absolute, and UNC paths", () => {
-		const root = "/tmp/artifacts";
-		expect(resolveArtifactPath(root, "reports/x.html")).toBe("/tmp/artifacts/reports/x.html");
+		const root = resolve("/tmp/artifacts");
+		expect(resolveArtifactPath(root, "reports/x.html")).toBe(resolve(root, "reports/x.html"));
 		expect(resolveArtifactPath(root, "../../../etc/passwd")).toBeNull();
 		expect(resolveArtifactPath(root, "/etc/passwd")).toBeNull();
 		expect(resolveArtifactPath(root, "\\\\host\\share")).toBeNull();

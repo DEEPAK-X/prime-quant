@@ -100,7 +100,7 @@ describe("RpcSession over a fake RPC child", () => {
 		expect(harness.children.length).toBe(1);
 		const { command, args } = harness.spawnCalls[0]!;
 		expect(command).toBe(process.execPath);
-		expect(args.join(" ")).toContain("packages/coding-agent/src/cli.ts");
+		expect(args.join(" ")).toContain(join("packages", "coding-agent", "src", "cli.ts"));
 		expect(args.join(" ")).toContain(`--mode rpc --cwd ${repoRoot} --session-dir`);
 		// The very first write is the readiness probe.
 		expect(writtenLines(child)[0]).toContain('"type":"get_state"');
