@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants, existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, constants, existsSync, readdirSync, readFileSync } from "node:fs";
 import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -344,6 +344,11 @@ export function getKernelVenvDir(): string {
 	return path.join(os.homedir(), ".prime", "agent", "kernel-venv");
 }
 
+export function getKernelBootstrapLogPath(venv?: string): string {
+	const targetVenv = venv ?? getKernelVenvDir();
+	return path.join(path.dirname(targetVenv), "kernel-bootstrap.log");
+}
+
 function getXdgKernelVenvDir(): string {
 	const dataHome = process.env.XDG_DATA_HOME
 		? path.resolve(expandHome(process.env.XDG_DATA_HOME))
@@ -377,21 +382,63 @@ async function resolveWritableKernelVenvDir(): Promise<string> {
 	}
 }
 
-function run(command: string, args: string[], options: { stdio?: "ignore" | "inherit" } = {}): Promise<void> {
+interface RunOptions {
+	stdio?: "ignore" | "inherit";
+	logFile?: string;
+	stage?: string;
+}
+
+function run(command: string, args: string[], options: RunOptions = {}): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
 			env: process.env,
 			windowsHide: true,
-			stdio: options.stdio ?? "ignore",
+			stdio: options.logFile ? ["ignore", "pipe", "pipe"] : (options.stdio ?? "ignore"),
 		});
-		child.on("error", reject);
+
+		let combinedOutput = "";
+
+		if (options.logFile) {
+			const header = `\n--- [${new Date().toISOString()}] ${options.stage ?? "command"} : ${command} ${args.join(" ")} ---\n`;
+			try {
+				appendFileSync(options.logFile, header, "utf8");
+			} catch {}
+
+			child.stdout?.on("data", (chunk: Buffer) => {
+				const text = chunk.toString();
+				combinedOutput += text;
+				try {
+					appendFileSync(options.logFile!, text, "utf8");
+				} catch {}
+			});
+
+			child.stderr?.on("data", (chunk: Buffer) => {
+				const text = chunk.toString();
+				combinedOutput += text;
+				try {
+					appendFileSync(options.logFile!, text, "utf8");
+				} catch {}
+			});
+		}
+
+		child.on("error", (err) => {
+			if (options.logFile) {
+				try {
+					appendFileSync(options.logFile, `\n[error] ${err.message}\n`, "utf8");
+				} catch {}
+			}
+			reject(err);
+		});
+
 		child.on("exit", (code, signal) => {
 			if (code === 0) {
 				resolve();
 				return;
 			}
 			const reason = signal ? `signal ${signal}` : `exit code ${code}`;
-			reject(new Error(`${command} ${args.join(" ")} failed with ${reason}`));
+			const tail = combinedOutput.trim().slice(-400);
+			const detail = tail ? `: ${tail}` : "";
+			reject(new Error(`${command} ${args.join(" ")} failed with ${reason}${detail}`));
 		});
 	});
 }
@@ -604,6 +651,7 @@ async function readBootstrapVersion(venv: string): Promise<BootstrapVersion | nu
 			runtime: typeof parsed.runtime === "string" ? parsed.runtime : undefined,
 			snapshot: typeof parsed.snapshot === "string" ? parsed.snapshot : undefined,
 			extraUvArgs,
+			quantEngine: typeof parsed.quantEngine === "string" ? parsed.quantEngine : undefined,
 			pythonSkills,
 		};
 	} catch {
@@ -761,6 +809,7 @@ async function bootstrapVenv(
 	venv: string,
 	pythonSkills: readonly BootstrapPythonSkill[],
 	options: EnsureKernelPythonOptions,
+	logPath?: string,
 ): Promise<void> {
 	await mkdir(path.dirname(venv), { recursive: true });
 	const uv = await ensureUv(options);
@@ -769,30 +818,50 @@ async function bootstrapVenv(
 	const runtimeRequirement = sourceDir ?? RUNTIME_REQUIREMENT;
 	const runtimeIdentity = await resolveRuntimeIdentity();
 
-	await run(uv, ["python", "install", PYTHON_VERSION]);
-	await run(uv, ["venv", venv, "--python", PYTHON_VERSION, "--seed"]);
-	await run(uv, [
-		"pip",
-		"install",
-		"--python",
-		python,
-		IPYKERNEL_REQUIREMENT,
-		runtimeRequirement,
-		STATE_SNAPSHOT_REQUIREMENT,
-		...DEFAULT_RLM_EXTRA_UV_ARGS,
-	]);
-	await installLocalQuantEngine(uv, python, options);
-	await syncPythonSkills(uv, venv, python, runtimeIdentity, pythonSkills, options);
+	reportProgress(options, "› downloading & installing Python 3.11 via uv…");
+	await run(uv, ["python", "install", PYTHON_VERSION], { logFile: logPath, stage: "Python install" });
+
+	reportProgress(options, "› creating Python virtual environment…");
+	await run(uv, ["venv", venv, "--python", PYTHON_VERSION, "--seed"], { logFile: logPath, stage: "Venv creation" });
+
+	reportProgress(options, "› installing core packages (ipykernel, runtime, dependencies)…");
+	await run(
+		uv,
+		[
+			"pip",
+			"install",
+			"--python",
+			python,
+			IPYKERNEL_REQUIREMENT,
+			runtimeRequirement,
+			STATE_SNAPSHOT_REQUIREMENT,
+			...DEFAULT_RLM_EXTRA_UV_ARGS,
+		],
+		{ logFile: logPath, stage: "Pip install core" },
+	);
+	await installLocalQuantEngine(uv, python, options, logPath);
+	await syncPythonSkills(uv, venv, python, runtimeIdentity, pythonSkills, options, logPath);
 }
 
-async function installLocalQuantEngine(uv: string, python: string, options: EnsureKernelPythonOptions): Promise<void> {
+async function installLocalQuantEngine(
+	uv: string,
+	python: string,
+	options: EnsureKernelPythonOptions,
+	logPath?: string,
+): Promise<void> {
 	const engineDir = resolveLocalQuantEngineDir();
 	if (engineDir === null) return;
 	reportProgress(options, "› installing prime-quant engine (polars, numpy, optuna)…");
-	await run(uv, ["pip", "install", "--python", python, "--editable", engineDir]);
+	await run(uv, ["pip", "install", "--python", python, "--editable", engineDir], {
+		logFile: logPath,
+		stage: "Pip install prime-quant engine",
+	});
 	if (process.platform === "win32") {
 		reportProgress(options, "› installing MetaTrader5 IPC binding…");
-		await run(uv, ["pip", "install", "--python", python, "MetaTrader5"]);
+		await run(uv, ["pip", "install", "--python", python, "MetaTrader5"], {
+			logFile: logPath,
+			stage: "Pip install MetaTrader5",
+		});
 	}
 }
 
@@ -803,6 +872,7 @@ async function syncPythonSkills(
 	runtimeIdentity: string,
 	pythonSkills: readonly BootstrapPythonSkill[],
 	options: EnsureKernelPythonOptions,
+	logPath?: string,
 ): Promise<void> {
 	const version = await readBootstrapVersion(venv);
 	const installedPythonSkills: BootstrapPythonSkill[] = [];
@@ -851,15 +921,13 @@ async function syncPythonSkills(
 			})
 			.flatMap(formatPythonSkillInstallArgs);
 
+		reportProgress(options, `› installing Python skill: ${skill.importName}…`);
 		try {
-			await run(uv, [
-				"pip",
-				"install",
-				"--python",
-				python,
-				...formatPythonSkillInstallArgs(skill),
-				...localDependencyArgs,
-			]);
+			await run(
+				uv,
+				["pip", "install", "--python", python, ...formatPythonSkillInstallArgs(skill), ...localDependencyArgs],
+				{ logFile: logPath, stage: `Pip install skill ${skill.importName}` },
+			);
 			installedPythonSkills.push(
 				skill,
 				...localDependencies.filter((dependency) => !installedPythonSkills.includes(dependency)),
@@ -903,9 +971,10 @@ async function kernelReady(
 	);
 }
 
-function formatBootstrapFailure(error: unknown): Error {
+function formatBootstrapFailure(error: unknown, logPath?: string): Error {
+	const logInfo = logPath ? `\nBootstrap log: ${logPath}` : "";
 	return new Error(
-		`Failed to set up the Python kernel runtime. ${errorMessage(error)}\n` +
+		`Failed to set up the Python kernel runtime. ${errorMessage(error)}${logInfo}\n` +
 			"First-time setup needs internet to install uv, Python, ipykernel, prime-agent-runtime, and default Python packages; once set up, prime-agent runs offline. " +
 			"Set PRIME_AGENT_KERNEL_PYTHON to a Python with ipykernel, a current prime-agent-runtime, and default Python packages installed to skip auto-bootstrap.",
 	);
@@ -945,6 +1014,7 @@ async function ensureKernelPythonUncached(
 	}
 
 	const venv = await resolveWritableKernelVenvDir();
+	const logPath = getKernelBootstrapLogPath(venv);
 	const python = venvPythonPath(venv);
 	const runtimeIdentity = await resolveRuntimeIdentity();
 	if (await kernelReady(python, venv, runtimeIdentity, pythonSkills)) return python;
@@ -953,7 +1023,7 @@ async function ensureKernelPythonUncached(
 	try {
 		if (await kernelReady(python, venv, runtimeIdentity, pythonSkills)) return python;
 		if (await kernelBaseReady(python, venv, runtimeIdentity)) {
-			await syncPythonSkills(await ensureUv(options), venv, python, runtimeIdentity, pythonSkills, options);
+			await syncPythonSkills(await ensureUv(options), venv, python, runtimeIdentity, pythonSkills, options, logPath);
 			return python;
 		}
 
@@ -964,9 +1034,9 @@ async function ensureKernelPythonUncached(
 			await rm(venv, { recursive: true, force: true });
 		}
 
-		await bootstrapVenv(venv, pythonSkills, options);
+		await bootstrapVenv(venv, pythonSkills, options, logPath);
 	} catch (error) {
-		throw formatBootstrapFailure(error);
+		throw formatBootstrapFailure(error, logPath);
 	} finally {
 		await releaseLock().catch(() => undefined);
 	}
