@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.js";
-import { migrateLegacySessionDirsToSessionRoot, migrateSessionsFromAgentRoot } from "../src/migrations.js";
+import {
+	migrateConfigDir,
+	migrateLegacySessionDirsToSessionRoot,
+	migrateSessionsFromAgentRoot,
+} from "../src/migrations.js";
 
 describe("session migrations", () => {
 	const tempDirs: string[] = [];
@@ -103,5 +107,49 @@ describe("session migrations", () => {
 
 		expect(existsSync(nestedFile)).toBe(true);
 		expect(existsSync(join(sessionsDir, "session-2.jsonl"))).toBe(false);
+	});
+});
+
+describe("config dir migration (A8 rebrand)", () => {
+	it("renames the legacy ~/.prime/agent tree into the new config dir", () => {
+		const home = mkdtempSync(join(tmpdir(), "primequant-home-"));
+		const previousHome = process.env.HOME;
+		const previousAgentDir = process.env[ENV_AGENT_DIR];
+		process.env.HOME = home;
+		delete process.env[ENV_AGENT_DIR];
+		try {
+			const legacy = join(home, ".prime", "agent");
+			mkdirSync(legacy, { recursive: true });
+			writeFileSync(join(legacy, "auth.json"), "{}");
+			const moved = migrateConfigDir();
+			expect(moved).toBe(true);
+			expect(existsSync(join(home, ".primequant", "auth.json"))).toBe(true);
+			expect(existsSync(legacy)).toBe(false);
+		} finally {
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			if (previousAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+			else process.env[ENV_AGENT_DIR] = previousAgentDir;
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	it("is a no-op when the new config dir already exists", () => {
+		const home = mkdtempSync(join(tmpdir(), "primequant-home-"));
+		const previousHome = process.env.HOME;
+		const previousAgentDir = process.env[ENV_AGENT_DIR];
+		process.env.HOME = home;
+		delete process.env[ENV_AGENT_DIR];
+		try {
+			mkdirSync(join(home, ".prime", "agent"), { recursive: true });
+			mkdirSync(join(home, ".primequant"), { recursive: true });
+			expect(migrateConfigDir()).toBe(false);
+		} finally {
+			if (previousHome === undefined) delete process.env.HOME;
+			else process.env.HOME = previousHome;
+			if (previousAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+			else process.env[ENV_AGENT_DIR] = previousAgentDir;
+			rmSync(home, { recursive: true, force: true });
+		}
 	});
 });

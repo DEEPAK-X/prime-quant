@@ -1,7 +1,3 @@
-/**
- * One-time migrations that run on startup.
- */
-
 import chalk from "chalk";
 import {
 	type Dirent,
@@ -15,6 +11,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "fs";
+import { homedir } from "os";
 import { basename, dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir, getSessionsDir } from "./config.js";
 import { migrateKeybindingsConfig } from "./core/keybindings.js";
@@ -24,6 +21,25 @@ const MIGRATION_GUIDE_URL =
 	"https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
 const EXTENSIONS_DOC_URL =
 	"https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/extensions.md";
+
+const LEGACY_CONFIG_DIR = ".prime/agent";
+
+/**
+ * A8 rebrand: adopt the new config dir name (e.g. .primequant) when a legacy
+ * ~/.prime/agent tree exists. The rename is atomic per volume; on failure the
+ * legacy path is left in place and re-tried on the next run.
+ */
+export function migrateConfigDir(): boolean {
+	const legacyDir = join(homedir(), LEGACY_CONFIG_DIR);
+	const targetDir = getAgentDir();
+	if (!existsSync(legacyDir) || existsSync(targetDir)) return false;
+	try {
+		renameSync(legacyDir, targetDir);
+	} catch {
+		return false;
+	}
+	return true;
+}
 
 /**
  * Migrate legacy oauth.json and settings.json apiKeys to auth.json.
@@ -413,6 +429,7 @@ export function runMigrations(cwd: string): {
 	migratedAuthProviders: string[];
 	deprecationWarnings: string[];
 } {
+	migrateConfigDir();
 	const migratedAuthProviders = migrateAuthToAuthJson();
 	migrateSessionsFromAgentRoot();
 	migrateLegacySessionDirsToSessionRoot();
