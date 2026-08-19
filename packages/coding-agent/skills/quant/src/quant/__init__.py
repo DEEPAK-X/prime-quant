@@ -35,6 +35,7 @@ from .idea_to_spec import (
     normalize_spec,
 )
 from .refine import refine_log_failure, recall_failures
+from .rooms import post_room_message, post_tearsheet_to_research
 from .runner import (
     MAX_CARD_TOKENS,
     CardTooLargeError,
@@ -62,6 +63,8 @@ __all__ = [
     "idea_to_spec",
     "load_data",
     "normalize_spec",
+    "post_room_message",
+    "post_tearsheet_to_research",
     "recall_failures",
     "refine_log_failure",
     "run_backtest",

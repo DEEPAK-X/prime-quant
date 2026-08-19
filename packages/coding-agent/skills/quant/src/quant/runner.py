@@ -785,6 +785,14 @@ async def run_pipeline(
                 output_path=report_path,
                 meta=meta,
             )
+            if isinstance(report, dict) and "report_path" in report:
+                from .rooms import post_tearsheet_to_research
+
+                post_tearsheet_to_research(
+                    report,
+                    symbol=spec_dict.get("symbol", ""),
+                    timeframe=spec_dict.get("timeframe", ""),
+                )
         except Exception as exc:  # noqa: BLE001 - a broken report must not kill the pipeline
             report = {"error": str(exc)[:120]}
 
