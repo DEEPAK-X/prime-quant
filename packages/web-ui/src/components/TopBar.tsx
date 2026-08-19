@@ -7,17 +7,17 @@ import { useEffect, useState } from "react";
 import type { AgentState, ConnectionState, Mt5State, Protocol } from "../lib/ws";
 
 const STATE_PILL: Record<AgentState, { label: string; cls: string }> = {
-	starting: { label: "starting", cls: "border-term-yellow text-term-yellow" },
-	ready: { label: "ready", cls: "border-term-accent text-term-accent" },
-	busy: { label: "busy", cls: "border-term-accent text-term-accent" },
-	error: { label: "error", cls: "border-term-red text-term-red" },
-	stopped: { label: "stopped", cls: "border-term-dim text-term-dim" },
+	starting: { label: "starting", cls: "bg-term-yellow-soft text-term-yellow" },
+	ready: { label: "ready", cls: "bg-term-accent-soft text-term-accent" },
+	busy: { label: "busy", cls: "bg-term-accent-soft text-term-accent" },
+	error: { label: "error", cls: "bg-term-red-soft text-term-red" },
+	stopped: { label: "stopped", cls: "bg-term-overlay text-term-dim" },
 };
 
 const MT5_PILL: Record<Mt5State["status"], { label: string; cls: string }> = {
-	ok: { label: "ok", cls: "border-term-accent text-term-accent" },
-	down: { label: "down", cls: "border-term-red text-term-red" },
-	unknown: { label: "unknown", cls: "border-term-dim text-term-dim" },
+	ok: { label: "ok", cls: "bg-term-accent-soft text-term-accent" },
+	down: { label: "down", cls: "bg-term-red-soft text-term-red" },
+	unknown: { label: "unknown", cls: "bg-term-overlay text-term-dim" },
 };
 
 const CONN_COLOR: Record<ConnectionState, string> = {
@@ -25,6 +25,8 @@ const CONN_COLOR: Record<ConnectionState, string> = {
 	connecting: "text-term-yellow",
 	closed: "text-term-red",
 };
+
+const PILL_BASE = "rounded-md px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider";
 
 function useClock(): string {
 	const [now, setNow] = useState(() => new Date());
@@ -62,49 +64,41 @@ export function TopBar({
 	const clock = useClock();
 
 	return (
-		<header className="pq-statusbar flex shrink-0 items-center gap-3 border-b border-term-border px-3 py-1.5">
+		<header className="pq-statusbar flex h-11 shrink-0 items-center gap-3 px-4">
 			<span
-				className={`border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
-					demo ? "border-term-yellow text-term-yellow" : "border-term-accent text-term-accent"
+				className={`rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-widest ${
+					demo ? "bg-term-yellow-soft text-term-yellow" : "bg-term-accent-soft text-term-accent"
 				}`}
 			>
 				{demo ? "demo mode" : "local mode"}
 			</span>
 
-			<div className="flex items-center gap-2">
+			<div className="flex items-center gap-1.5">
 				{state ? (
-					<span
-						className={`border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${state.cls}`}
-						title="orchestrator state"
-					>
+					<span className={`${PILL_BASE} ${state.cls}`} title="orchestrator state">
 						{state.label}
 					</span>
 				) : null}
-				{protocol === 2 ? (
-					<span className="border border-term-dim px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-term-dim">
-						v2
-					</span>
-				) : null}
+				{protocol === 2 ? <span className={`${PILL_BASE} bg-term-overlay text-term-dim`}>v2</span> : null}
 				<button
 					type="button"
 					onClick={onRefreshMt5}
-					className={`border px-1.5 py-0.5 text-[10px] uppercase tracking-wider transition-colors hover:bg-term-raised ${mt5Pill.cls}`}
+					className={`${PILL_BASE} transition-colors duration-150 hover:brightness-125 ${mt5Pill.cls}`}
 					title={mt5Server ? `${mt5Server} — click to re-probe` : "MT5 status — click to re-probe"}
 				>
 					mt5 {mt5Pill.label}
-					{mt5Server ? <span className="ml-1 text-term-dim">· {mt5Server}</span> : null}
+					{mt5Server ? <span className="ml-1 opacity-70">· {mt5Server}</span> : null}
 				</button>
 			</div>
 
 			<div className="ml-auto flex items-center gap-3">
-				<span className="text-[10px] uppercase tracking-wider text-term-dim">
-					ws{" "}
-					<span className={CONN_COLOR[connection]}>
-						{connection === "open" ? <span className="pq-dot-live mr-1 inline-block h-1.5 w-1.5 rounded-full bg-term-accent align-middle" /> : null}
-						{connection}
-					</span>
+				<span className={`text-[11px] font-medium ${CONN_COLOR[connection]}`}>
+					{connection === "open" ? (
+						<span className="pq-dot-live mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-term-accent align-middle" />
+					) : null}
+					{connection}
 				</span>
-				<span className="text-[10px] tracking-wider text-term-dim" suppressHydrationWarning>
+				<span className="text-[11px] font-medium tabular-nums text-term-dim" suppressHydrationWarning>
 					{clock}
 				</span>
 				<button
@@ -112,10 +106,10 @@ export function TopBar({
 					onClick={onToggleRail}
 					aria-pressed={railOpen}
 					aria-label={railOpen ? "Hide command rail" : "Show command rail"}
-					className={`border px-2 py-0.5 text-[10px] uppercase tracking-wider transition-colors ${
+					className={`rounded-lg px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider transition-colors duration-150 ${
 						railOpen
-							? "border-term-accent text-term-accent"
-							: "border-term-border text-term-dim hover:text-term-fg"
+							? "bg-term-accent-soft text-term-accent"
+							: "text-term-dim hover:bg-term-raised hover:text-term-fg"
 					}`}
 				>
 					rail

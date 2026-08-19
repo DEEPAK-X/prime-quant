@@ -26,11 +26,11 @@ const AGENT_DOT: Record<SubagentEvent["status"], string> = {
 function RailSection({ title, count, children }: { readonly title: string; readonly count: number; readonly children: React.ReactNode }) {
 	return (
 		<section className="flex min-h-0 flex-col border-b border-term-border">
-			<header className="flex shrink-0 items-center justify-between px-3 py-2">
-				<span className="text-[9px] uppercase tracking-widest text-term-dim">{title}</span>
-				<span className="text-[9px] text-term-dim">{count}</span>
+			<header className="flex shrink-0 items-center justify-between px-3.5 py-2">
+				<span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-term-dim">{title}</span>
+				<span className="rounded-md bg-term-overlay px-1.5 py-0.5 text-[9px] font-medium text-term-dim">{count}</span>
 			</header>
-			<div className="min-h-0 overflow-y-auto">{children}</div>
+			<div className="min-h-0 overflow-y-auto px-1.5 pb-1.5">{children}</div>
 		</section>
 	);
 }
@@ -79,14 +79,14 @@ export function CommandRail({ subagents, messages, roomMessages, artifacts, tear
 		<aside className="flex w-[260px] shrink-0 flex-col border-l border-term-border bg-term-panel">
 			<RailSection title="agents online" count={agents.length}>
 				{agents.length === 0 ? (
-					<p className="px-3 pb-2 text-[10px] text-term-dim">no agents yet</p>
+					<p className="px-2.5 pb-2 text-[10px] text-term-dim">no agents yet</p>
 				) : (
 					agents.map((agent) => (
 						<button
 							key={agent.id}
 							type="button"
 							onClick={() => navigate("agents")}
-							className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-term-raised"
+							className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 hover:bg-term-raised"
 						>
 							<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${AGENT_DOT[agent.status]}`} />
 							<span className="min-w-0 flex-1">
@@ -101,14 +101,14 @@ export function CommandRail({ subagents, messages, roomMessages, artifacts, tear
 
 			<RailSection title="mentions" count={mentions.length}>
 				{mentions.length === 0 ? (
-					<p className="px-3 pb-2 text-[10px] text-term-dim">nothing addressed to you</p>
+					<p className="px-2.5 pb-2 text-[10px] text-term-dim">nothing addressed to you</p>
 				) : (
 					mentions.map((mention) => (
 						<button
 							key={mention.key}
 							type="button"
 							onClick={() => navigate("rooms")}
-							className="block w-full truncate px-3 py-1.5 text-left text-[10px] text-term-fg hover:bg-term-raised"
+							className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-[10px] text-term-fg transition-colors duration-150 hover:bg-term-raised"
 							title={mention.text}
 						>
 							<span className="text-term-accent">{mention.from}</span>
@@ -120,7 +120,7 @@ export function CommandRail({ subagents, messages, roomMessages, artifacts, tear
 
 			<RailSection title="shared files" count={files.length}>
 				{files.length === 0 ? (
-					<p className="px-3 pb-2 text-[10px] text-term-dim">no artifacts or tearsheets yet</p>
+					<p className="px-2.5 pb-2 text-[10px] text-term-dim">no artifacts or tearsheets yet</p>
 				) : (
 					files.map((file) =>
 						file.url ? (
@@ -129,7 +129,7 @@ export function CommandRail({ subagents, messages, roomMessages, artifacts, tear
 								href={file.url}
 								target="_blank"
 								rel="noreferrer"
-								className="block truncate px-3 py-1.5 text-[10px] text-term-fg hover:bg-term-raised"
+								className="block truncate rounded-lg px-2 py-1.5 text-[10px] text-term-fg transition-colors duration-150 hover:bg-term-raised"
 								title={file.name}
 							>
 								{file.name}
@@ -139,7 +139,7 @@ export function CommandRail({ subagents, messages, roomMessages, artifacts, tear
 								key={file.key}
 								type="button"
 								onClick={() => navigate("bots")}
-								className="block w-full truncate px-3 py-1.5 text-left text-[10px] text-term-fg hover:bg-term-raised"
+								className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-[10px] text-term-fg transition-colors duration-150 hover:bg-term-raised"
 								title={file.name}
 							>
 								{file.name}
@@ -150,7 +150,7 @@ export function CommandRail({ subagents, messages, roomMessages, artifacts, tear
 			</RailSection>
 
 			<RailSection title="pinned" count={0}>
-				<p className="px-3 pb-2 text-[10px] text-term-dim">pinning lands with rooms in M2</p>
+				<p className="px-2.5 pb-2 text-[10px] text-term-dim">pinning lands with rooms in M2</p>
 			</RailSection>
 		</aside>
 	);
