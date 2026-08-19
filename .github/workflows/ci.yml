@@ -139,16 +139,65 @@ jobs:
         working-directory: ${{ matrix.package }}
         run: ${{ matrix.command }}
 
+  windows-smoke:
+    name: Windows smoke
+    needs: trust
+    if: needs.trust.outputs.allowed == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a6ea86ab843810 # v5.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: prime-quant/pyproject.toml
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test prebuilt bundle cli
+        run: |
+          node packages/coding-agent/dist/cli.js --version
+          node packages/coding-agent/dist/cli.js --help
+
+      - name: Install prime-quant engine and test dependencies
+        working-directory: prime-quant
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest pytest-asyncio
+
+      - name: Run quant engine pytest suite
+        working-directory: prime-quant
+        run: pytest tests -q
+
   build-check-test:
     name: build-check-test
     if: always() && needs.trust.outputs.allowed == 'true'
-    needs: [trust, build-check, test]
+    needs: [trust, build-check, test, windows-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Verify CI results
         env:
           BUILD_CHECK_RESULT: ${{ needs.build-check.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          WINDOWS_SMOKE_RESULT: ${{ needs.windows-smoke.result }}
         run: |
           test "$BUILD_CHECK_RESULT" = success
           test "$TEST_RESULT" = success
+          test "$WINDOWS_SMOKE_RESULT" = success
