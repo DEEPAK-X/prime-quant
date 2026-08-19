@@ -21,7 +21,15 @@ export function shouldEnableStartupProgress(
 	if (!isStderrTty) {
 		return false;
 	}
-	if (env.CI || env.NODE_ENV === "test" || env.PI_STARTUP_BENCHMARK) {
+	if (
+		env.CI ||
+		env.NODE_ENV === "test" ||
+		env.PI_STARTUP_BENCHMARK ||
+		env.PRIME_AGENT_LIGHTWEIGHT === "1" ||
+		env.PRIME_AGENT_LIGHTWEIGHT === "true" ||
+		env.PRIME_AGENT_NO_ANIMATIONS === "1" ||
+		env.PRIME_AGENT_NO_ANIMATIONS === "true"
+	) {
 		return false;
 	}
 	if (env.PI_CODING_AGENT_DAEMON_WORKER || env.PI_DAEMON_CATALOG_PROCESS || env.PI_CODING_AGENT_OWNED_WORKER) {
@@ -41,7 +49,9 @@ export function shouldEnableStartupProgress(
 			arg === "-v" ||
 			arg === "--version" ||
 			arg === "--list-models" ||
-			arg === "export"
+			arg === "export" ||
+			arg === "--lightweight" ||
+			arg === "--no-animations"
 		) {
 			return false;
 		}

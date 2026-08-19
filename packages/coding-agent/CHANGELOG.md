@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added lightweight launch mode and flags (`--lightweight`, `--no-daemon`, `--no-animations`) to bypass daemon startup and animations when resources are constrained.
 - Added an animated startup progress indicator for interactive CLI launches to provide real-time feedback during initialization.
 - Fixed Windows session lease directory creation and stale lease reclamation EPERM/EACCES handling.
 - Fixed Windows supervisor ownership liveness checks and named pipe socket file cleanup during daemon startup and shutdown.
