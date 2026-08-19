@@ -14,6 +14,7 @@
 - Added `prime-quant.cmd` and `prime-quant.ps1` Windows launchers and a root `tui:dist` script that run the prebuilt bundle, avoiding the four-process `tsx` transpile that made `npm run tui` appear stuck on low-RAM Windows machines.
 - Expanded `docs/windows.md` with fast-startup instructions, first-run kernel bootstrap expectations, antivirus exclusions, and hang troubleshooting.
 - Added broker-CSV and Parquet data ingestion (`primequant.data.loader.load_ohlcv` and `rlm.quant.load_data`) with automatic column-variant detection, delimiter detection, and timezone-aware UTC timestamps to enable non-MT5 backtest data workflows.
+- Added schedule-able watcher prompt presets (Risk Watcher, Flow Watcher, Research Watcher) in `packages/coding-agent/skills/quant/watchers/` with prompt templates, inputs, and compact card schemas for `prime-agent schedule`.
 
 - Added `rlm.quant.recall_failures(kind=None)`, the read counterpart to `refine_log_failure`: it recalls previously-logged quant failure patterns from `rlm.harness` memory and returns a compact `{count, failures, prompt_block}` card whose `prompt_block` summarizes the known dead-ends (ordered by recurrence) so the next strategy idea can avoid repeating them, closing the fail-and-refine loop.
 - Added `windowsHide: true` to all long-lived detached child spawns (daemon, owned-session worker, daemon-update restart coordinator, GUI orchestrator, Python fork server, and ipykernel launcher) so no console window flashes on Windows when these start in the background.
