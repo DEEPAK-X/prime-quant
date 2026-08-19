@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .data import DEFAULT_BARS, fetch_data
+from .data import DEFAULT_BARS, fetch_data, load_data
 from .idea_to_spec import (
     ASSET_CLASS_CFD,
     ASSET_CLASS_FOREX,
@@ -60,6 +60,7 @@ __all__ = [
     "card_to_json",
     "fetch_data",
     "idea_to_spec",
+    "load_data",
     "normalize_spec",
     "recall_failures",
     "refine_log_failure",

@@ -14,6 +14,7 @@ from primequant.data.loader import (
     CANON_OPEN,
     CANON_SPREAD,
     CANON_TIME,
+    CANON_VOLUME,
     load_ohlcv,
     resample,
     run_qa,
@@ -121,6 +122,7 @@ def test_load_ohlcv_csv_roundtrip(tmp_path):
     assert loaded.height == 80
     assert CANON_TIME in loaded.columns
     assert loaded[CANON_TIME].is_sorted()
+    assert loaded.schema[CANON_TIME].time_zone == "UTC"
 
 
 def test_load_ohlcv_parquet_roundtrip(tmp_path):
@@ -130,12 +132,105 @@ def test_load_ohlcv_parquet_roundtrip(tmp_path):
     loaded, qa = load_ohlcv(p, timeframe_seconds=3600)
     assert loaded.height == 80
     assert not qa.has_errors
+    assert loaded.schema[CANON_TIME].time_zone == "UTC"
 
 
 def test_load_ohlcv_unsupported_type(tmp_path):
     p = tmp_path / "x.json"
     p.write_text("[]")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unsupported file type"):
+        load_ohlcv(p)
+
+
+def test_load_ohlcv_empty_file_raises(tmp_path):
+    p = tmp_path / "empty.csv"
+    p.write_text("")
+    with pytest.raises(ValueError, match="empty"):
+        load_ohlcv(p)
+
+
+def test_load_ohlcv_nonexistent_file_raises():
+    with pytest.raises(FileNotFoundError):
+        load_ohlcv("nonexistent_path_to_file.csv")
+
+
+def test_load_ohlcv_mt5_tab_separated_date_time(tmp_path):
+    content = (
+        "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+        "2024.01.02\t00:00:00\t1.1000\t1.1050\t1.0950\t1.1020\t100\t0\t10\n"
+        "2024.01.02\t01:00:00\t1.1020\t1.1080\t1.1010\t1.1070\t150\t0\t10\n"
+        "2024.01.02\t02:00:00\t1.1070\t1.1090\t1.1040\t1.1050\t120\t0\t10\n"
+    )
+    p = tmp_path / "mt5_export.csv"
+    p.write_text(content)
+    df, qa = load_ohlcv(p, timeframe_seconds=3600)
+    assert df.height == 3
+    assert set(df.columns) >= {CANON_TIME, CANON_OPEN, CANON_HIGH, CANON_LOW, CANON_CLOSE, CANON_VOLUME, CANON_SPREAD}
+    assert df.schema[CANON_TIME].time_zone == "UTC"
+    assert not qa.has_errors
+    assert df[CANON_OPEN].to_list() == [1.1000, 1.1020, 1.1070]
+
+
+def test_load_ohlcv_yahoo_finance_variant(tmp_path):
+    content = (
+        "Date,Open,High,Low,Close,Adj Close,Volume\n"
+        "2024-01-02,1.1000,1.1050,1.0950,1.1020,1.1020,1000\n"
+        "2024-01-03,1.1020,1.1080,1.1010,1.1070,1.1070,1500\n"
+    )
+    p = tmp_path / "yahoo.csv"
+    p.write_text(content)
+    df, qa = load_ohlcv(p, timeframe_seconds=86400)
+    assert df.height == 2
+    assert df.schema[CANON_TIME].time_zone == "UTC"
+    assert df[CANON_VOLUME].to_list() == [1000.0, 1500.0]
+    assert not qa.has_errors
+
+
+def test_load_ohlcv_short_aliases_and_bid_ask(tmp_path):
+    content = (
+        "ts,o,h,l,c,vol,bid,ask\n"
+        "1704153600,1.1000,1.1050,1.0950,1.1020,500,1.1015,1.1025\n"
+        "1704157200,1.1020,1.1080,1.1010,1.1070,600,1.1065,1.1075\n"
+    )
+    p = tmp_path / "short_cols.csv"
+    p.write_text(content)
+    df, qa = load_ohlcv(p, timeframe_seconds=3600)
+    assert df.height == 2
+    assert CANON_TIME in df.columns
+    assert CANON_SPREAD in df.columns
+    # Spread should be derived as ask - bid (0.0010)
+    assert round(df[CANON_SPREAD][0], 4) == 0.0010
+    assert not qa.has_errors
+
+
+def test_load_ohlcv_semicolon_delimited(tmp_path):
+    content = (
+        "datetime;open;high;low;close;volume\n"
+        "2024-01-02 00:00:00;1.1000;1.1050;1.0950;1.1020;100\n"
+        "2024-01-02 01:00:00;1.1020;1.1080;1.1010;1.1070;150\n"
+    )
+    p = tmp_path / "semi.csv"
+    p.write_text(content)
+    df, qa = load_ohlcv(p, timeframe_seconds=3600)
+    assert df.height == 2
+    assert not qa.has_errors
+    assert df[CANON_CLOSE].to_list() == [1.1020, 1.1070]
+
+
+def test_load_ohlcv_malformed_missing_columns(tmp_path):
+    content = "time,some_random_col\n2024-01-01,123\n"
+    p = tmp_path / "missing_ohlc.csv"
+    p.write_text(content)
+    df, qa = load_ohlcv(p)
+    assert qa.has_errors
+    assert any(i.code == "missing_columns" for i in qa.issues)
+
+
+def test_load_ohlcv_unparseable_time_column_raises(tmp_path):
+    content = "time,open,high,low,close\nnot_a_date,1.1,1.2,1.0,1.1\n"
+    p = tmp_path / "bad_date.csv"
+    p.write_text(content)
+    with pytest.raises(ValueError, match="Unable to parse"):
         load_ohlcv(p)
 
 

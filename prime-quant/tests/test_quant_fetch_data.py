@@ -129,3 +129,38 @@ def test_fetch_data_unknown_symbol_returns_error_card():
     card, ns, _ = _run(symbol="ZZZUSD", timeframe="M5", mt5_module=FakeMT5())
     assert card["status"] == "error"
     assert "_last_df" not in ns
+
+
+def test_load_data_file(tmp_path):
+    from quant.data import load_data
+    from tests._fxdata import synthetic_fx
+
+    df = synthetic_fx(n_bars=30)
+    p = tmp_path / "eurusd_m5.csv"
+    df.write_csv(p)
+
+    ns: dict[str, Any] = {}
+    card_json = asyncio.run(load_data(str(p), timeframe="M5", namespace=ns))
+    card = json.loads(card_json)
+
+    assert card["status"] == "success"
+    assert card["rows"] == 30
+    assert card["timeframe"] == "M5"
+    assert ns["df"] is not None
+    assert ns["_last_df"] is ns["df"]
+
+
+def test_fetch_data_from_file_path(tmp_path):
+    from tests._fxdata import synthetic_fx
+
+    df = synthetic_fx(n_bars=25)
+    p = tmp_path / "test_data.parquet"
+    df.write_parquet(p)
+
+    ns: dict[str, Any] = {}
+    card_json = asyncio.run(fetch_data(str(p), timeframe="M15", namespace=ns))
+    card = json.loads(card_json)
+
+    assert card["status"] == "success"
+    assert card["rows"] == 25
+    assert ns["df"].height == 25

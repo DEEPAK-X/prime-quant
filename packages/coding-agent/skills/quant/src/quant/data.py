@@ -68,6 +68,53 @@ def _qa_card_summary(qa: Any) -> dict[str, Any]:
     }
 
 
+async def load_data(
+    path: str | os.PathLike[str],
+    *,
+    symbol: str | None = None,
+    timeframe: str | None = None,
+    timeframe_seconds: int | None = None,
+    namespace: dict[str, Any] | None = None,
+) -> str:
+    """Load an OHLCV CSV or Parquet file from disk and return a compact JSON card.
+
+    - ``path``: path to CSV or Parquet file.
+    - ``symbol``: optional symbol label to record in the card.
+    - ``timeframe``: optional timeframe label (e.g. "M5", "H1").
+    - ``namespace``: where to bind ``df`` / ``_last_df`` (defaults to caller's scope).
+    """
+    ns = namespace if namespace is not None else _caller_namespace()
+    try:
+        try:
+            from primequant.data.loader import load_ohlcv
+        except Exception as exc:
+            raise QuantUnavailableError(
+                "primequant is not installed in this kernel environment; "
+                "install the prime-quant package (polars + numpy) and restart the kernel"
+            ) from exc
+
+        file_path = str(path)
+        df, qa = load_ohlcv(file_path, timeframe_seconds=timeframe_seconds)
+
+        sym = symbol or os.path.splitext(os.path.basename(file_path))[0]
+        card: dict[str, Any] = {
+            "status": "success",
+            "source": file_path,
+            "symbol": sym,
+            "rows": df.height,
+            "range": [str(df["time"].min()), str(df["time"].max())],
+            "qa": _qa_card_summary(qa),
+        }
+        if timeframe:
+            card["timeframe"] = timeframe
+
+        ns["df"] = df
+        _bind_last(ns, **{_LAST_DF: df})
+        return card_to_json(card)
+    except Exception as exc:  # noqa: BLE001 - failures return an error card
+        return _error_card(exc)
+
+
 async def fetch_data(
     symbol: str,
     timeframe: str = "M5",
@@ -80,7 +127,7 @@ async def fetch_data(
 ) -> str:
     """Fetch live OHLCV bars from MetaTrader 5 and return a compact JSON card.
 
-    - ``symbol``: broker symbol as shown in Market Watch (e.g. ``"EURUSD"``).
+    - ``symbol``: broker symbol as shown in Market Watch (e.g. ``"EURUSD"``) or a file path.
     - ``timeframe``: ``M1``..``MN1`` style label (e.g. ``"M5"``, ``"H1"``).
     - ``bars``: number of most-recent closed bars to pull.
     - ``namespace``: where to bind ``df`` / ``_last_df`` (defaults to the
@@ -94,10 +141,15 @@ async def fetch_data(
     the data.
     """
     ns = namespace if namespace is not None else _caller_namespace()
+
+    # If symbol is an existing file or has a data file extension, load directly from file
+    if os.path.isfile(symbol) or any(symbol.lower().endswith(ext) for ext in (".csv", ".parquet", ".pq", ".tsv", ".txt")):
+        return await load_data(symbol, timeframe=timeframe, namespace=ns)
+
     bridge = None
     try:
         try:
-            from primequant.data.loader import QAResult, run_qa
+            from primequant.data.loader import QAResult, load_ohlcv, run_qa
             from primequant.data.mt5 import MT5Bridge, resolve_timeframe
         except Exception as exc:
             raise QuantUnavailableError(
@@ -112,14 +164,15 @@ async def fetch_data(
                 mt5_module_default = None
             mt5_module = mt5_module_default
 
+        _, tf_label = resolve_timeframe(timeframe)
+        kwargs = _initialize_kwargs()
         bridge = MT5Bridge(mt5_module)
-        if not bridge.initialize(**_initialize_kwargs()):
+        if not bridge.initialize(**kwargs):
             raise ConnectionError(
                 "mt5.initialize failed; start the MetaTrader 5 terminal and log in, "
-                "or set PRIME_QUANT_MT5_PATH/LOGIN/PASSWORD/SERVER"
+                "or set PRIME_QUANT_MT5_PATH/LOGIN/PASSWORD/SERVER, or load from a file using load_data(path)"
             )
 
-        _, tf_label = resolve_timeframe(timeframe)
         df = bridge.get_recent_ohlcv(symbol, timeframe, int(bars), cache=cache, cache_dir=cache_dir)
         if "tick_volume" in df.columns:
             df = df.rename({"tick_volume": "volume"})
@@ -146,4 +199,4 @@ async def fetch_data(
             bridge.shutdown()
 
 
-__all__ = ["DEFAULT_BARS", "fetch_data"]
+__all__ = ["DEFAULT_BARS", "fetch_data", "load_data"]
