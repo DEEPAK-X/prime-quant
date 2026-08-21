@@ -1,0 +1,23 @@
+{
+	"name": "@prime-quant/dsh-prime",
+	"version": "0.7.2",
+	"private": true,
+	"type": "module",
+	"description": "DeepSeek Harness host plugin: Prime Agent as subagent_prime over pooled RPC.",
+	"exports": {
+		".": "./src/host/index.ts",
+		"./host": "./src/host/index.ts",
+		"./host-glue": "./src/host/glue.ts",
+		"./prime-events": "./src/prime-events.ts"
+	},
+	"scripts": {
+		"test": "vitest --run"
+	},
+	"dependencies": {
+		"@earendil-works/pi-web-ui-server": "*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.5",
+		"vitest": "^4.1.10"
+	}
+}

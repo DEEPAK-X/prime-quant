@@ -1,0 +1,44 @@
+# Prime Quant ↔ DeepSeek Harness adapter (docs/dsh-adapter/02-frozen-contract.md §3).
+# Row ids are frozen. Do not reuse an id for a different package.
+
+# HOST — Agent A
+- id: subagent-prime-acp
+  name: '@deepseek-ai/dsh-subagent-acp'
+  disabled: true
+  # Phase 1 spike only. C local toggle: set disabled: false and fill command/args
+  # from resolveAcpChild() (src/host/acp-patch.ts):
+  #   command: process.execPath
+  #   args: [<absolute>/packages/coding-agent/dist/bundle/cli.js, --mode, acp]
+  # Committed default stays disabled so vanilla DSH coding sessions do not spawn Prime.
+  config:
+    providerName: prime
+    command: node
+    args: ['--mode', 'acp']
+    permission: reject
+
+- id: subagent-prime-rpc
+  name: '@prime-quant/dsh-prime/host'
+  config:
+    providerName: prime
+    pool: true
+
+- id: tool-subagent-prime
+  name: '@deepseek-ai/dsh-tool-subagent'
+  disabled: true
+  # C's --surface dsh overlay may set disabled: false. Do not enable in this repo
+  # default — that would surprise vanilla DSH coding sessions (docs/dsh-adapter/02 §3).
+  config:
+    provider: prime
+    toolName: subagent_prime
+    backgroundMode: one-shot
+    maxDepth: provider-managed
+
+- id: prime-host-glue
+  name: '@prime-quant/dsh-prime/host-glue'
+
+# CLIENT — Agent B (copied verbatim from 02; B owns the modules)
+- id: prime-client-nodes
+  name: '@prime-quant/dsh-prime/client'
+
+- id: prime-client-settings
+  name: '@prime-quant/dsh-prime/client-settings'
