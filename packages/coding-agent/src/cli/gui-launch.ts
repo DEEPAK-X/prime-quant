@@ -22,11 +22,13 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 const PREVIEW_BRIDGE_REL = ["packages", "web-ui", "server", "preview-bridge.mjs"] as const;
 const DSH_PLUGIN_MARKER_REL = ["packages", "dsh-prime", "cordis.patch.yml"] as const;
 const DSH_OVERLAY_REL = ["overlays", "gui-dsh.yml"] as const;
 const DSH_PACKAGE_JS_REL = ["node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"] as const;
+const TSX_LOADER_REL = ["node_modules", "tsx", "dist", "loader.mjs"] as const;
 
 export const DEFAULT_DSH_PORT = "3080";
 
@@ -144,8 +146,13 @@ function planNativeLaunch(options: LaunchGuiOptions, exists: (path: string) => b
  * Overlays ride the launcher form, not the `web` alias: the pinned CLI passes
  * `web`'s remaining arguments to the web app itself, which rejects `--patch`.
  * So the argv is
- * `node <dsh>/lib/bin.js --profile web [--patch <overlay>]... [app flags]`,
+ * `node [--import <tsx loader>] <dsh>/lib/bin.js --profile web [--patch <overlay>]... [app flags]`,
  * where the app flags are the same ones `dsh web` would take.
+ *
+ * The tsx ESM hook (repo devDependency, resolved by the same walk-up) lets the
+ * pinned DSH host load this checkout's raw-TypeScript plugin entries; without
+ * it Node's resolver demands compiled `.js`. The hook rides argv so spawned
+ * Prime children stay clean.
  * Pure apart from the injected exists probe.
  */
 export function planDshLaunch(options: LaunchGuiOptions, exists: (path: string) => boolean): SurfaceLaunchPlan {
@@ -157,11 +164,14 @@ export function planDshLaunch(options: LaunchGuiOptions, exists: (path: string) 
 	if (!binJs) {
 		throw new Error(MISSING_DSH_ERROR);
 	}
+	const args: string[] = [];
+	const tsxLoader = walkUpFind(options.cwd ?? process.cwd(), TSX_LOADER_REL, exists);
+	if (tsxLoader) args.push("--import", pathToFileURL(tsxLoader).href);
+	args.push(binJs, "--profile", "web");
 	const overlay = resolve(dirname(pluginMarker), ...DSH_OVERLAY_REL);
-	const port = options.port ?? DEFAULT_DSH_PORT;
-	const args = [binJs, "--profile", "web"];
 	if (exists(overlay)) args.push("--patch", overlay);
 	if (options.open === false) args.push("--no-open");
+	const port = options.port ?? DEFAULT_DSH_PORT;
 	args.push("--port", port);
 	return { args, env: {}, url: `http://127.0.0.1:${port}` };
 }

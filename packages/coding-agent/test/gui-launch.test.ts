@@ -125,6 +125,16 @@ describe("planDshLaunch", () => {
 		expect(plan.url).toBe(`http://127.0.0.1:${DEFAULT_DSH_PORT}`);
 	});
 
+	test("prepends the repo tsx ESM hook when present", () => {
+		const fs = makeTree(["packages/dsh-prime/cordis.patch.yml", DSH_BIN_REL, "node_modules/tsx/dist/loader.mjs"]);
+		const plan = planDshLaunch({ cwd: fs.root, open: false }, fs.exists);
+		expect(plan.args.slice(0, 3)).toEqual([
+			"--import",
+			`file:///${resolve(fs.root, "node_modules/tsx/dist/loader.mjs").replace(/\\/g, "/")}`,
+			resolve(fs.root, DSH_BIN_REL),
+		]);
+	});
+
 	test("keeps the browser open by default and passes a port override", () => {
 		const fs = makeTree(["packages/dsh-prime/cordis.patch.yml", DSH_BIN_REL]);
 		const plan = planDshLaunch({ cwd: fs.root, port: "4000" }, fs.exists);

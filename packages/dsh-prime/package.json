@@ -6,9 +6,11 @@
 	"description": "DeepSeek Harness host plugin: Prime Agent as subagent_prime over pooled RPC.",
 	"exports": {
 		".": "./src/host/index.ts",
-		"./host": "./src/host/index.ts",
-		"./host-glue": "./src/host/glue.ts",
-		"./prime-events": "./src/prime-events.ts"
+		"./host": "./src/cordis-entry.ts",
+		"./host-glue": "./src/cordis-entry.ts",
+		"./prime-events": "./src/prime-events.ts",
+		"./client": "./client/index.ts",
+		"./client-settings": "./client/settings.ts"
 	},
 	"scripts": {
 		"test": "vitest --run"
