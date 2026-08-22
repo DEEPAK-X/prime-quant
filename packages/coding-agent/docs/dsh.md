@@ -89,6 +89,11 @@ fails fast with an actionable message when DSH or the plugin is missing, applies
   falls back to the RPC pool.
 - Wiring the daemon-first choice into the host `apply()` touches Agent A's files and is left to A
   (one-line pool swap behind the existing interface).
+- Dependency note (Agent A): `transport-daemon.ts` imports `DaemonClient` /
+  `DAEMON_PROTOCOL_VERSION` / `defaultDaemonSocketPath` from the public
+  `@earendil-works/pi-coding-agent` entry. That package resolves in this monorepo (root hoisting +
+  root tsconfig paths) but is not declared in `packages/dsh-prime/package.json` yet; A should add
+  `"@earendil-works/pi-coding-agent": "*"` to `dependencies` when wiring the transport in.
 
 ## RAM guidance
 
