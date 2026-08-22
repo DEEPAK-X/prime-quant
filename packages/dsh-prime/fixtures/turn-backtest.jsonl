@@ -1,0 +1,8 @@
+{"type":"prime/step","data":{"stepId":"run-1-ast","name":"ast_check","status":"running"}}
+{"type":"prime/step","data":{"stepId":"run-1-ast","name":"ast_check","status":"done"}}
+{"type":"prime/step","data":{"stepId":"run-1-bt","name":"backtest","status":"running"}}
+{"type":"prime/step","data":{"stepId":"run-1-bt","name":"backtest","status":"done","detail":"sharpe 1.2"}}
+{"type":"prime/step","data":{"stepId":"run-1-gate","name":"cpcv_gate","status":"done","detail":"dsr 1.32 · pbo 0.11"}}
+{"type":"prime/card","data":{"cardId":"c-run-1","title":"Backtest · EURUSD M5","payload":{"status":"success","metrics":{"sharpe_ratio":1.84},"validation_gate":{"passed":true}}}}
+{"type":"prime/tearsheet","data":{"url":"/prime-reports/tearsheet_EURUSD_M5.html","name":"tearsheet_EURUSD_M5.html","ts":"2026-08-22T00:00:00Z"}}
+{"type":"prime/subagent","data":{"id":"sub-1","name":"worker://eurusd-m5-scan","tier":"worker","status":"DONE","task":"param sweep"}}

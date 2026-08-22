@@ -1,0 +1,5 @@
+{"type":"prime/step","data":{"stepId":"run-2-fetch","name":"fetch_data","status":"running"}}
+{"type":"prime/step","data":{"stepId":"run-2-fetch","name":"fetch_data","status":"done","detail":"mt5 EURUSD M5 2020-2026"}}
+{"type":"prime/step","data":{"stepId":"run-2-opt","name":"optimize","status":"running"}}
+{"type":"prime/card","data":{"cardId":"c-run-2","title":"Optimize · EURUSD M5","payload":{"status":"running","metrics":{"trials":240},"validation_gate":{"passed":false}}}}
+{"type":"prime/subagent","data":{"id":"sub-2","name":"worker://eurusd-opt","tier":"worker","status":"RUNNING","task":"grid search"}}
