@@ -1,0 +1,6 @@
+# Launch overlay for `prime-agent gui --surface dsh` (Agent C, docs/dsh-adapter/02 §3).
+# Applied via `dsh web --patch <this file>`. Enables the quant delegation tool for
+# that launch only; the committed repo default stays disabled (vanilla DSH coding
+# sessions must not see it).
+- id: tool-subagent-prime
+  disabled: false
