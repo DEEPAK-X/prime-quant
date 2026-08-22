@@ -71,9 +71,18 @@ npm run gui:dsh                 # same, via tsx source CLI
 
 `--surface dsh` resolves the plugin (`packages/dsh-prime/cordis.patch.yml`) by walking up from the cwd,
 fails fast with an actionable message when DSH or the plugin is missing, applies
-`overlays/gui-dsh.yml` when present, and spawns `node <global>/@deepseek-ai/dsh/lib/bin.js web`
-(never a `.cmd` shim) with `windowsHide: true`. `--no-open` unless `--open`-style opt-in;
-`--port` passes through (default stays DSH's 3080).
+`overlays/gui-dsh.yml` when present, and spawns
+`node <dsh>/lib/bin.js --profile web [--patch <overlay>] [--no-open] [--port <port>]`
+(never a `.cmd` shim) with `windowsHide: true`. `--port` passes through (default stays DSH's 3080).
+
+Verified live on this machine: the launcher printed `URL: http://127.0.0.1:3097`, DSH served HTTP 200
+on `127.0.0.1:3097`, and the boot spawned zero Prime processes and zero kernels at idle.
+
+Pinned-CLI gotcha (verified): the `dsh web` alias forwards everything after it to the web app, whose
+parser rejects `--patch` (`error: unknown option '--patch'`). Overlays must ride the launcher form —
+`node bin.js --profile web --patch <file> --no-open --port <p>` — which is what the surface launcher
+does. The overlay's id-targeted disable override is tolerated even when the plugin is not installed
+(boot succeeded against a stock web profile).
 
 ## Pattern 3 status (daemon transport)
 

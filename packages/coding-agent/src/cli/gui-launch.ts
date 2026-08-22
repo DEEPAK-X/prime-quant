@@ -139,8 +139,13 @@ function planNativeLaunch(options: LaunchGuiOptions, exists: (path: string) => b
 }
 
 /**
- * Plan the DSH web invocation for this checkout's plugin (docs/dsh-adapter/02 §8):
- * `node <dsh>/lib/bin.js web [--no-open] [--port <port>] [--patch <gui-dsh overlay>]`.
+ * Plan the DSH web invocation for this checkout's plugin (docs/dsh-adapter/02 §8).
+ *
+ * Overlays ride the launcher form, not the `web` alias: the pinned CLI passes
+ * `web`'s remaining arguments to the web app itself, which rejects `--patch`.
+ * So the argv is
+ * `node <dsh>/lib/bin.js --profile web [--patch <overlay>]... [app flags]`,
+ * where the app flags are the same ones `dsh web` would take.
  * Pure apart from the injected exists probe.
  */
 export function planDshLaunch(options: LaunchGuiOptions, exists: (path: string) => boolean): SurfaceLaunchPlan {
@@ -154,10 +159,10 @@ export function planDshLaunch(options: LaunchGuiOptions, exists: (path: string) 
 	}
 	const overlay = resolve(dirname(pluginMarker), ...DSH_OVERLAY_REL);
 	const port = options.port ?? DEFAULT_DSH_PORT;
-	const args = [binJs, "web"];
+	const args = [binJs, "--profile", "web"];
+	if (exists(overlay)) args.push("--patch", overlay);
 	if (options.open === false) args.push("--no-open");
 	args.push("--port", port);
-	if (exists(overlay)) args.push("--patch", overlay);
 	return { args, env: {}, url: `http://127.0.0.1:${port}` };
 }
 

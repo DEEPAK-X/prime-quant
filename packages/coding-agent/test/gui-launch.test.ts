@@ -105,7 +105,7 @@ describe("findDshLauncher", () => {
 });
 
 describe("planDshLaunch", () => {
-	test("plans dsh web with port and overlay", () => {
+	test("plans the launcher form with overlay before app flags", () => {
 		const fs = makeTree([
 			"packages/dsh-prime/cordis.patch.yml",
 			"packages/dsh-prime/overlays/gui-dsh.yml",
@@ -114,12 +114,13 @@ describe("planDshLaunch", () => {
 		const plan = planDshLaunch({ cwd: fs.root, open: false }, fs.exists);
 		expect(plan.args).toEqual([
 			resolve(fs.root, DSH_BIN_REL),
+			"--profile",
 			"web",
+			"--patch",
+			resolve(fs.root, "packages/dsh-prime/overlays/gui-dsh.yml"),
 			"--no-open",
 			"--port",
 			DEFAULT_DSH_PORT,
-			"--patch",
-			resolve(fs.root, "packages/dsh-prime/overlays/gui-dsh.yml"),
 		]);
 		expect(plan.url).toBe(`http://127.0.0.1:${DEFAULT_DSH_PORT}`);
 	});
@@ -127,14 +128,21 @@ describe("planDshLaunch", () => {
 	test("keeps the browser open by default and passes a port override", () => {
 		const fs = makeTree(["packages/dsh-prime/cordis.patch.yml", DSH_BIN_REL]);
 		const plan = planDshLaunch({ cwd: fs.root, port: "4000" }, fs.exists);
-		expect(plan.args).toEqual([resolve(fs.root, DSH_BIN_REL), "web", "--port", "4000"]);
+		expect(plan.args).toEqual([resolve(fs.root, DSH_BIN_REL), "--profile", "web", "--port", "4000"]);
 		expect(plan.url).toBe("http://127.0.0.1:4000");
 	});
 
 	test("omits --patch when the overlay is absent", () => {
 		const fs = makeTree(["packages/dsh-prime/cordis.patch.yml", DSH_BIN_REL]);
 		const plan = planDshLaunch({ cwd: fs.root, open: false }, fs.exists);
-		expect(plan.args).toEqual([resolve(fs.root, DSH_BIN_REL), "web", "--no-open", "--port", DEFAULT_DSH_PORT]);
+		expect(plan.args).toEqual([
+			resolve(fs.root, DSH_BIN_REL),
+			"--profile",
+			"web",
+			"--no-open",
+			"--port",
+			DEFAULT_DSH_PORT,
+		]);
 	});
 
 	test("fails fast when the plugin is missing", () => {
@@ -188,7 +196,8 @@ describe("launchGui", () => {
 		const call = calls[0]!;
 		expect(call.command).toBe(process.execPath);
 		expect(call.args[0]).toBe(resolve(fs.root, DSH_BIN_REL));
-		expect(call.args[1]).toBe("web");
+		expect(call.args[1]).toBe("--profile");
+		expect(call.args[2]).toBe("web");
 		expect(call.args).toContain("--no-open");
 		expect(call.args).toContain("--patch");
 		expect(call.args.join(" ")).not.toMatch(/\.cmd/);
