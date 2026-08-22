@@ -268,9 +268,12 @@ async function runShutdown(args: string[]): Promise<PublicCommandResult> {
 	return HANDLED;
 }
 
+const GUI_SURFACES = ["native", "dsh"] as const;
+
 async function runGui(args: string[]): Promise<PublicCommandResult> {
 	let open = true;
 	let port: string | undefined;
+	let surface: (typeof GUI_SURFACES)[number] = "native";
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === "--no-open") {
@@ -285,11 +288,22 @@ async function runGui(args: string[]): Promise<PublicCommandResult> {
 			}
 			port = next;
 			i++;
+		} else if (arg === "--surface") {
+			const next = args[i + 1];
+			const valid = GUI_SURFACES.find((candidate) => candidate === next);
+			if (!valid) {
+				return fail(
+					`Usage: ${APP_NAME} ${getCommandSpec(["gui"])?.usage ?? "gui"}`,
+					'--surface must be "native" (default Vite GUI) or "dsh" (DeepSeek Harness).',
+				);
+			}
+			surface = valid;
+			i++;
 		} else {
 			return fail(`Unknown option for gui: ${arg}`, `Run "${APP_NAME} help gui" for usage.`);
 		}
 	}
-	const { child, url } = launchGui({ open, port });
+	const { child, url } = launchGui({ open, port, surface });
 	child.on("error", (error) => {
 		console.error(`${APP_NAME} gui failed: ${error.message}`);
 		process.exit(1);

@@ -152,11 +152,15 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
 	},
 	{
 		path: ["gui"],
-		usage: "gui [--no-open] [--port <port>]",
+		usage: "gui [--no-open] [--port <port>] [--surface <native|dsh>]",
 		summary: "Launch the PrimeQuant web GUI (Vite + bridge)",
 		description:
-			"Starts the web GUI and its backend bridge as a supervised process tree and opens the default browser. Only available from a source checkout (packages/web-ui).",
-		options: ["--no-open   Do not open a browser", "--port <n>  GUI port (default 5173)"],
+			"Starts the web GUI and its backend bridge as a supervised process tree and opens the default browser. Only available from a source checkout (packages/web-ui). --surface dsh launches the optional DeepSeek Harness web UI for this checkout's plugin instead (packages/dsh-prime, default port 3080).",
+		options: [
+			"--no-open   Do not open a browser",
+			"--port <n>  Surface port (native 5173, dsh 3080)",
+			'--surface <s>  "native" (default) or "dsh"',
+		],
 	},
 ];
 
